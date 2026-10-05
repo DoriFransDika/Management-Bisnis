@@ -1,0 +1,235 @@
+'use client';
+
+import React from 'react';
+import Link from 'next/link';
+import Image from 'next/image';
+import {
+  ArrowRight,
+  Boxes,
+  Sparkles,
+  ShoppingBag,
+  TrendingUp,
+  ShieldCheck,
+  CheckCircle2,
+  Heart,
+  Flame,
+  Tags
+} from 'lucide-react';
+import { motion } from 'framer-motion';
+
+export default function LandingPage() {
+  const steps = [
+    {
+      num: '01',
+      title: 'Belanja Bahan Baku',
+      desc: 'Catat belanja tepung, mentega, gula, ragi, dan telur. Sistem otomatis menghitung harga satuan dan memberi peringatan saat persediaan menipis.',
+      icon: Boxes,
+      badge: 'Input Modal',
+      color: 'bg-[#FCE4EC] text-[#D81B60] border-[#F8BBD0]',
+    },
+    {
+      num: '02',
+      title: 'Proses Produksi',
+      desc: 'Pilih resep roti dan jumlah batch baking. Sistem akan memotong stok bahan baku secara otomatis sesuai gramasi dan menambah stok roti di etalase.',
+      icon: Flame,
+      badge: 'Kalkulasi Otomatis',
+      color: 'bg-[#FFF3E0] text-[#E65100] border-[#FFE0B2]',
+    },
+    {
+      num: '03',
+      title: 'Penjualan Produk Jadi',
+      desc: 'Kasir kilat untuk transaksi roti toko, pesanan katering, dan snack box. Mendukung pembayaran Tunai serta QRIS dengan pencatatan instan.',
+      icon: ShoppingBag,
+      badge: 'Kasir Cepat',
+      color: 'bg-[#E8F5E9] text-[#2E7D32] border-[#C8E6C9]',
+    },
+    {
+      num: '04',
+      title: 'Pantau Laporan & Stok',
+      desc: 'Evaluasi keuntungan bersih harian, grafik omset mingguan, hingga simulasi kalkulator HPP & margin laba untuk strategi harga terbaik.',
+      icon: TrendingUp,
+      badge: 'Laba Bersih',
+      color: 'bg-[#FFF8E1] text-[#F57F17] border-[#FFECB3]',
+    },
+  ];
+
+  return (
+    <div className="min-h-screen bg-[url('/bg.png')] bg-cover bg-center bg-fixed bg-no-repeat text-[#3E2723] flex flex-col font-sans relative overflow-x-hidden selection:bg-[#FFB300]/30 selection:text-[#3E2723]">
+      {/* Warm ambient aura */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[350px] bg-gradient-to-b from-[#FCE4EC]/20 via-[#FFF3E0]/15 to-transparent blur-[100px] pointer-events-none" />
+
+      {/* Top Navbar with Store Logo */}
+      <header className="w-full max-w-6xl mx-auto px-5 py-5 flex items-center justify-between z-10">
+        <div className="flex items-center gap-3">
+          <div className="relative w-12 h-12 rounded-2xl overflow-hidden shadow-md shadow-[#3E2723]/10 border-2 border-[#FFB300]/50 bg-white p-0.5 shrink-0 transition-transform hover:scale-105">
+            <Image
+              src="/logo.jpeg"
+              alt="Logo Dapoer Mamak"
+              width={48}
+              height={48}
+              className="w-full h-full object-contain rounded-xl"
+              priority
+            />
+          </div>
+          <div>
+            <span className="font-black text-[#3E2723] text-lg tracking-tight">Dapoer Mamak</span>
+            <span className="block text-[10px] text-[#D81B60] font-black uppercase tracking-wider">
+              Snack & Healthy Drink
+            </span>
+          </div>
+        </div>
+
+        <Link
+          href="/login"
+          className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-white hover:bg-[#FFF3E0] border-2 border-[#EFE4DA] text-xs font-black text-[#3E2723] transition-all shadow-xs"
+        >
+          <span>Masuk Sistem</span>
+          <ArrowRight className="w-3.5 h-3.5 text-[#FFB300]" />
+        </Link>
+      </header>
+
+      {/* Hero Section */}
+      <main className="flex-1 max-w-5xl mx-auto px-5 pt-6 pb-16 flex flex-col items-center text-center z-10">
+        {/* Logo Badge Big Display */}
+        <motion.div
+          initial={{ scale: 0.85, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.4 }}
+          className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-3xl overflow-hidden shadow-xl shadow-[#3E2723]/15 border-4 border-[#FFB300] bg-white p-1 mb-5"
+        >
+          <Image
+            src="/logo.jpeg"
+            alt="Logo Dapoer Mamak"
+            width={128}
+            height={128}
+            className="w-full h-full object-contain rounded-2xl"
+            priority
+          />
+        </motion.div>
+
+        {/* Device pill badge */}
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#FFF3E0] border border-[#FFE0B2] text-[#3E2723] text-xs font-black mb-5 shadow-xs">
+          <Heart className="w-3.5 h-3.5 fill-[#D81B60] text-[#D81B60]" />
+          <span>Cooking With Love • Dioptimalkan untuk HP & Tablet</span>
+        </div>
+
+        {/* Big Title */}
+        <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-[#3E2723] tracking-tight max-w-3xl leading-[1.15]">
+          Dapoer Mamak <br />
+          <span className="bg-gradient-to-r from-[#FFB300] via-[#FFA000] to-[#E65100] bg-clip-text text-transparent">
+            Management System
+          </span>
+        </h1>
+
+        {/* Slogan */}
+        <p className="mt-4 text-sm sm:text-base lg:text-lg text-[#6D4C41] max-w-2xl leading-relaxed font-medium">
+          Sistem pembukuan toko roti privat: catat resep adonan, kontrol stok bahan baku, etalase roti siap saji, dan pantau laba bersih secara real-time.
+        </p>
+
+        {/* CTA Buttons with Golden Ribbon Accent */}
+        <div className="mt-8 flex flex-col sm:flex-row items-center gap-3.5 w-full sm:w-auto">
+          <Link
+            href="/login"
+            className="w-full sm:w-auto flex items-center justify-center gap-2.5 px-9 py-3.5 rounded-3xl bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] font-black text-sm shadow-lg shadow-[#FFB300]/30 hover:brightness-105 active:scale-95 transition-all"
+          >
+            <span>Masuk ke Aplikasi</span>
+            <ArrowRight className="w-4 h-4 stroke-[3]" />
+          </Link>
+
+          <Link
+            href="/dashboard"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-7 py-3.5 rounded-3xl bg-white hover:bg-[#FFF3E0] border-2 border-[#EFE4DA] text-[#3E2723] font-black text-sm shadow-xs transition-all"
+          >
+            <span>Buka Dashboard Langsung</span>
+          </Link>
+        </div>
+
+        {/* Quick Credential Card */}
+        <div className="mt-6 p-3 px-5 rounded-2xl bg-white border border-[#EFE4DA] text-xs text-[#5D4037] flex items-center gap-2 shadow-xs">
+          <ShieldCheck className="w-4 h-4 text-[#2E7D32] shrink-0" />
+          <span>Akses Privat: Email: <strong className="text-[#3E2723]">dapurmamak@gmail.com</strong> • Sandi: <strong className="text-[#3E2723]">bismillah laku</strong></span>
+        </div>
+
+        {/* Cara Kerja Sistem Per-Step */}
+        <div className="mt-20 w-full text-left">
+          <div className="text-center mb-10">
+            <h2 className="text-xl sm:text-2xl font-black text-[#3E2723] tracking-tight">
+              Panduan Cara Kerja Sistem (4-Step)
+            </h2>
+            <p className="text-xs sm:text-sm text-[#8D6E63] mt-1 max-w-lg mx-auto">
+              Empat tahapan otomatisasi bisnis dari pembelian tepung hingga pencatatan laba bersih toko.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
+            {steps.map((st) => {
+              const Icon = st.icon;
+              return (
+                <div
+                  key={st.num}
+                  className="p-6 rounded-3xl bg-white border-2 border-[#EFE4DA] hover:border-[#FFB300] shadow-md shadow-[#3E2723]/5 hover:shadow-xl hover:shadow-[#FFB300]/15 transition-all duration-300 flex flex-col justify-between group"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-xs font-mono font-black text-[#A1887F] group-hover:text-[#FFB300] transition-colors">
+                        STEP {st.num}
+                      </span>
+                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${st.color}`}>
+                        {st.badge}
+                      </span>
+                    </div>
+
+                    <div className="w-12 h-12 rounded-2xl bg-[#FAF7F2] flex items-center justify-center text-[#FFB300] mb-3 border border-[#EFE4DA]">
+                      <Icon className="w-6 h-6 text-[#3E2723]" />
+                    </div>
+
+                    <h3 className="font-black text-[#3E2723] text-base mb-2">
+                      {st.title}
+                    </h3>
+
+                    <p className="text-xs text-[#6D4C41] leading-relaxed">
+                      {st.desc}
+                    </p>
+                  </div>
+
+                  <div className="pt-4 mt-4 border-t border-[#EFE4DA] flex items-center text-[11px] font-black text-[#FFB300] group-hover:translate-x-0.5 transition-transform">
+                    <span className="text-[#3E2723]">Lihat modul</span>
+                    <ArrowRight className="w-3.5 h-3.5 ml-1 text-[#FFB300]" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Highlights */}
+        <div className="mt-16 w-full p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-[#FFF3E0] via-white to-[#FCE4EC] border-2 border-[#EFE4DA] text-left flex flex-col md:flex-row items-center justify-between gap-6 shadow-lg shadow-[#3E2723]/5">
+          <div className="space-y-2">
+            <h3 className="text-lg font-black text-[#3E2723]">Dirancang Sempurna untuk Dapur & Meja Kasir</h3>
+            <p className="text-xs sm:text-sm text-[#5D4037] max-w-xl leading-relaxed">
+              Tombol kuning emas empuk mudah dijangkau ibu jari, kartu pastel yang menenangkan mata saat di dapur, dan penyimpanan data aman 100% lokal.
+            </p>
+            <div className="flex flex-wrap items-center gap-4 pt-2 text-xs font-black text-[#3E2723]">
+              <span className="flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-[#2E7D32]" /> Kategori Kustom Fleksibel</span>
+              <span className="flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-[#2E7D32]" /> Cepat Tanpa Loading Berat</span>
+              <span className="flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-[#2E7D32]" /> 100% Privat untuk Toko</span>
+            </div>
+          </div>
+
+          <Link
+            href="/login"
+            className="shrink-0 px-7 py-3.5 rounded-3xl bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] font-black text-xs flex items-center gap-2 shadow-md shadow-[#FFB300]/30 hover:brightness-105 transition-all"
+          >
+            <span>Buka Dapur Sekarang</span>
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="w-full border-t border-[#EFE4DA] py-6 text-center text-xs text-[#8D6E63]">
+        <p>© 2026 Dapoer Mamak Management System • Snack & Healthy Drink</p>
+      </footer>
+    </div>
+  );
+}
