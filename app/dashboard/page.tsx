@@ -42,71 +42,71 @@ export default function DashboardPage() {
         {/* Header */}
         <Header onOpenQuickBake={() => setIsBakeModalOpen(true)} />
 
-        <main className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full mx-auto">
-          {/* Welcome Banner with Store Logo & Quick Action Buttons */}
+        <main className="p-3 sm:p-5 lg:p-6 space-y-3 sm:space-y-4 max-w-7xl w-full mx-auto">
+          {/* Welcome Banner - Compact */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 p-6 sm:p-7 rounded-3xl bg-white/90 backdrop-blur-md border-2 border-[#EFE4DA] shadow-lg shadow-[#3E2723]/5 relative overflow-hidden"
+            transition={{ duration: 0.2 }}
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 sm:p-4 rounded-2xl bg-white/90 backdrop-blur-md border border-[#EFE4DA] shadow-xs relative overflow-hidden"
           >
-            <div className="flex items-center gap-4 relative z-10">
-              <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden shadow-md shadow-[#3E2723]/10 border-2 border-[#FFB300] bg-white p-1 shrink-0">
+            <div className="flex items-center gap-2.5 relative z-10">
+              <div className="relative w-9 h-9 sm:w-11 sm:h-11 rounded-xl overflow-hidden shadow-xs border border-[#FFB300] bg-white p-0.5 shrink-0">
                 <Image
                   src="/logo.jpeg"
                   alt="Logo Dapoer Mamak"
-                  width={80}
-                  height={80}
-                  className="w-full h-full object-contain rounded-xl"
+                  width={48}
+                  height={48}
+                  className="w-full h-full object-contain rounded-lg"
                   priority
                 />
               </div>
 
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[#D81B60] font-black text-xs uppercase tracking-wider flex items-center gap-1.5 bg-[#FCE4EC] px-3 py-0.5 rounded-full border border-[#F8BBD0]">
-                    <Heart className="w-3.5 h-3.5 fill-[#D81B60]" /> Selamat Bertugas, Mamak!
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h2 className="text-sm sm:text-lg font-black text-[#3E2723] tracking-tight truncate">
+                    Dapoer Mamak
+                  </h2>
+                  <span className="text-[#2E7D32] font-black text-[9px] sm:text-[10px] bg-[#E8F5E9] px-2 py-0.2 rounded-full border border-[#C8E6C9] shrink-0">
+                    Buka
                   </span>
                 </div>
-                <h2 className="text-xl sm:text-2xl lg:text-3xl font-black text-[#3E2723] tracking-tight mt-1">
-                  Pusat Kendali Dapoer Mamak
-                </h2>
-                <p className="text-xs sm:text-sm text-[#6D4C41] mt-0.5 max-w-xl font-medium">
-                  Pantau stok adonan roti, pesanan kasir, dan keuntungan bersih dalam genggaman layar sentuh.
+                <p className="text-[10px] sm:text-xs text-[#8D6E63] font-medium truncate">
+                  Manajemen Roti & Kasir Dapur
                 </p>
               </div>
             </div>
 
-            {/* Action Bar Pills with Golden Ribbon Button */}
-            <div className="flex flex-wrap items-center gap-2.5 relative z-10 self-start sm:self-auto">
+            {/* Action Bar Pills */}
+            <div className="grid grid-cols-3 sm:flex sm:items-center gap-1.5 relative z-10 w-full sm:w-auto">
               <button
                 type="button"
                 onClick={() => setIsBakeModalOpen(true)}
-                className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] text-xs font-black shadow-md shadow-[#FFB300]/30 hover:brightness-105 active:scale-95 transition-all"
+                className="flex items-center justify-center gap-1 px-2.5 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] text-[11px] font-black shadow-xs hover:brightness-105 active:scale-95 transition-all"
               >
-                <Sparkles className="w-4 h-4 fill-[#3E2723]" />
-                <span>Baking Roti</span>
+                <Sparkles className="w-3.5 h-3.5 fill-[#3E2723] shrink-0" />
+                <span>Baking</span>
               </button>
               <button
                 type="button"
                 onClick={() => setIsSaleModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-[#E8F5E9] hover:bg-[#C8E6C9] border border-[#A5D6A7] text-[#1B5E20] text-xs font-black active:scale-95 transition-all shadow-xs"
+                className="flex items-center justify-center gap-1 px-2.5 py-1.5 sm:py-2 rounded-xl bg-[#E8F5E9] hover:bg-[#C8E6C9] border border-[#A5D6A7] text-[#1B5E20] text-[11px] font-black active:scale-95 transition-all shadow-xs"
               >
-                <ShoppingBag className="w-4 h-4 text-[#2E7D32]" />
-                <span>Kasir Jual</span>
+                <ShoppingBag className="w-3.5 h-3.5 text-[#2E7D32] shrink-0" />
+                <span>Kasir</span>
               </button>
               <button
                 type="button"
                 onClick={() => setIsRestockModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-[#FFF3E0] hover:bg-[#FFE0B2] border border-[#FFD54F] text-[#3E2723] text-xs font-black active:scale-95 transition-all shadow-xs"
+                className="flex items-center justify-center gap-1 px-2.5 py-1.5 sm:py-2 rounded-xl bg-[#FFF3E0] hover:bg-[#FFE0B2] border border-[#FFD54F] text-[#3E2723] text-[11px] font-black active:scale-95 transition-all shadow-xs"
               >
-                <Boxes className="w-4 h-4 text-[#E65100]" />
-                <span>Belanja Bahan</span>
+                <Boxes className="w-3.5 h-3.5 text-[#E65100] shrink-0" />
+                <span>Belanja</span>
               </button>
             </div>
           </motion.div>
 
-          {/* Bagian Atas: 4 Kotak Metrik Utama (Focus Layout) */}
+          {/* Bagian Atas: 4 Kotak Metrik Utama (Grid 2 Kolom di HP) */}
           <SummaryCards />
 
           {/* Bagian Tengah & Kanan: Grid Grafik & Panel Notifikasi */}
@@ -117,45 +117,45 @@ export default function DashboardPage() {
               <SalesChart />
 
               {/* Mutasi Keuangan Kasir & Dapur */}
-              <div className="p-6 md:p-7 rounded-3xl bg-white/92 backdrop-blur-md border-2 border-[#EFE4DA] shadow-lg shadow-[#3E2723]/5">
-                <div className="flex items-center justify-between pb-4 border-b border-[#EFE4DA]">
-                  <div className="flex items-center gap-2.5">
-                    <span className="p-2 rounded-2xl bg-[#FFF3E0] text-[#3E2723] border border-[#FFE0B2]">
-                      <Receipt className="w-4 h-4" />
+              <div className="p-4 sm:p-6 md:p-7 rounded-2xl sm:rounded-3xl bg-white/92 backdrop-blur-md border-1.5 sm:border-2 border-[#EFE4DA] shadow-sm sm:shadow-lg shadow-[#3E2723]/5">
+                <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-[#EFE4DA]">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 sm:p-2 rounded-xl sm:rounded-2xl bg-[#FFF3E0] text-[#3E2723] border border-[#FFE0B2]">
+                      <Receipt className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     </span>
-                    <h3 className="font-black text-base text-[#3E2723]">Mutasi Keuangan Terkini</h3>
+                    <h3 className="font-black text-sm sm:text-base text-[#3E2723]">Mutasi Keuangan Terkini</h3>
                   </div>
                   <Link
                     href="/keuangan"
-                    className="text-xs font-black text-[#D81B60] hover:text-[#AD1457] flex items-center gap-1 group"
+                    className="text-[11px] sm:text-xs font-black text-[#D81B60] hover:text-[#AD1457] flex items-center gap-1 group"
                   >
-                    <span>Buku Kas Lengkap</span>
+                    <span>Buku Kas</span>
                     <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                   </Link>
                 </div>
 
-                <div className="mt-4 space-y-2.5">
+                <div className="mt-3 sm:mt-4 space-y-2 sm:space-y-2.5">
                   {transactions.slice(0, 5).map((trx) => (
                     <div
                       key={trx.id}
-                      className="p-4 rounded-2xl bg-white/80 border border-[#EFE4DA] flex items-center justify-between gap-3 text-xs hover:border-[#FFB300] transition-all"
+                      className="p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-white/80 border border-[#EFE4DA] flex items-center justify-between gap-2.5 text-xs hover:border-[#FFB300] transition-all"
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <span
-                          className={`w-3 h-3 rounded-full shrink-0 ${
+                          className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full shrink-0 ${
                             trx.type === 'income' ? 'bg-[#2E7D32]' : 'bg-[#C2185B]'
                           }`}
                         />
-                        <div>
-                          <p className="font-black text-[#3E2723]">{trx.description}</p>
-                          <p className="text-[11px] text-[#8D6E63] mt-0.5 font-medium">
+                        <div className="min-w-0">
+                          <p className="font-black text-[#3E2723] text-xs sm:text-sm truncate">{trx.description}</p>
+                          <p className="text-[10px] sm:text-[11px] text-[#8D6E63] mt-0.5 font-medium truncate">
                             {trx.date} • {trx.category} • <span className="text-[#3E2723] font-bold">{trx.paymentMethod}</span>
                           </p>
                         </div>
                       </div>
                       <div className="text-right shrink-0">
                         <span
-                          className={`font-black text-sm ${
+                          className={`font-black text-xs sm:text-sm ${
                             trx.type === 'income' ? 'text-[#2E7D32]' : 'text-[#C2185B]'
                           }`}
                         >

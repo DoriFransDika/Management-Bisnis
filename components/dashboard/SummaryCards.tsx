@@ -12,96 +12,73 @@ export function SummaryCards() {
 
   const cards = [
     {
-      title: 'Uang Masuk',
+      title: 'Masuk',
       amount: formatRupiah(summary.totalIncome),
-      subtext: '+18.4% kasir & katering',
       href: '/keuangan',
       icon: ArrowUpRight,
-      bgGradient: 'from-white via-[#F1F8E9] to-white',
+      bgGradient: 'from-white to-[#F1F8E9]',
       borderColor: 'border-[#DCEDC8]',
-      iconBg: 'bg-[#E8F5E9] text-[#2E7D32] border border-[#C8E6C9]',
-      badgeText: 'Pemasukan',
-      badgeClass: 'bg-[#E8F5E9] text-[#2E7D32] border border-[#C8E6C9]',
+      iconBg: 'bg-[#E8F5E9] text-[#2E7D32]',
       accentColor: 'text-[#2E7D32]',
     },
     {
-      title: 'Pengeluaran',
+      title: 'Keluar',
       amount: formatRupiah(summary.totalExpense),
-      subtext: 'Belanja bahan & gas LPG',
       href: '/keuangan',
       icon: ArrowDownRight,
-      bgGradient: 'from-white via-[#FCE4EC]/50 to-white',
+      bgGradient: 'from-white to-[#FCE4EC]/60',
       borderColor: 'border-[#F8BBD0]',
-      iconBg: 'bg-[#FCE4EC] text-[#C2185B] border border-[#F8BBD0]',
-      badgeText: 'Biaya Toko',
-      badgeClass: 'bg-[#FCE4EC] text-[#C2185B] border border-[#F8BBD0]',
+      iconBg: 'bg-[#FCE4EC] text-[#C2185B]',
       accentColor: 'text-[#C2185B]',
     },
     {
-      title: 'Keuntungan Bersih',
+      title: 'Laba',
       amount: formatRupiah(summary.netProfit),
-      subtext: 'Laba bersih sehat (~39%)',
       href: '/keuangan',
       icon: Wallet,
-      bgGradient: 'from-white via-[#FFF3E0] to-[#FFF8E1]',
+      bgGradient: 'from-white to-[#FFF8E1]',
       borderColor: 'border-[#FFE082]',
-      iconBg: 'bg-[#FFECB3] text-[#E65100] border border-[#FFD54F]',
-      badgeText: 'Laba Bersih',
-      badgeClass: 'bg-[#FFECB3] text-[#E65100] border border-[#FFD54F]',
+      iconBg: 'bg-[#FFECB3] text-[#E65100]',
       accentColor: 'text-[#E65100]',
-      highlight: true,
     },
     {
-      title: 'Stok Roti Siap Jual',
+      title: 'Stok',
       amount: `${formatNumber(summary.readyProductsCount)} Pcs`,
-      subtext: 'Etalase toko pagi & sore',
       href: '/stok',
       icon: ShoppingBag,
-      bgGradient: 'from-white via-[#FCE4EC]/70 to-[#FFF3E0]/70',
-      borderColor: 'border-[#F8BBD0]',
-      iconBg: 'bg-[#F8BBD0] text-[#880E4F] border border-[#F48FB1]',
-      badgeText: 'Siap Saji',
-      badgeClass: 'bg-[#FCE4EC] text-[#880E4F] border border-[#F8BBD0]',
-      accentColor: 'text-[#880E4F]',
+      bgGradient: 'from-white to-[#FFF3E0]',
+      borderColor: 'border-[#FFD54F]',
+      iconBg: 'bg-[#FFF3E0] text-[#D81B60]',
+      accentColor: 'text-[#D81B60]',
     },
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
+    <div className="grid grid-cols-4 gap-1.5 sm:gap-3">
       {cards.map((card, idx) => {
         const Icon = card.icon;
         return (
           <Link key={idx} href={card.href} className="block group">
             <motion.div
-              initial={{ opacity: 0, y: 15 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, delay: idx * 0.08 }}
-              whileHover={{ y: -4, scale: 1.01 }}
+              transition={{ duration: 0.2, delay: idx * 0.04 }}
+              whileHover={{ y: -2, scale: 1.01 }}
               whileTap={{ scale: 0.98 }}
-              className={`p-6 rounded-3xl bg-gradient-to-br ${card.bgGradient} border-2 ${card.borderColor} text-[#3E2723] shadow-lg shadow-[#3E2723]/5 relative overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-[#3E2723]/10`}
+              className={`p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-gradient-to-br ${card.bgGradient} border border-[#EFE4DA] hover:${card.borderColor} text-[#3E2723] shadow-xs relative overflow-hidden transition-all duration-150 flex flex-col justify-between`}
             >
-              {/* Subtle glow orb */}
-              <div className="absolute top-0 right-0 w-28 h-28 bg-[#FFB300]/10 rounded-full blur-2xl pointer-events-none" />
-
-              <div className="flex items-center justify-between mb-4">
-                <span className={`text-[11px] font-black px-3 py-1 rounded-full ${card.badgeClass}`}>
-                  {card.badgeText}
+              <div className="flex items-center justify-between gap-1 mb-1">
+                <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-[#6D4C41] truncate">
+                  {card.title}
                 </span>
-                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${card.iconBg} shadow-xs group-hover:scale-110 transition-transform`}>
-                  <Icon className="w-5 h-5 stroke-[2.5]" />
+                <div className={`w-5 h-5 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center shrink-0 ${card.iconBg} shadow-2xs`}>
+                  <Icon className="w-3 h-3 sm:w-4 sm:h-4 stroke-[2.5]" />
                 </div>
               </div>
 
               <div>
-                <p className="text-xs font-black uppercase tracking-wider text-[#6D4C41]">
-                  {card.title}
-                </p>
-                <h3 className="text-2xl sm:text-[26px] font-black tracking-tight text-[#3E2723] mt-1">
+                <p className={`text-[11px] sm:text-base lg:text-lg font-black tracking-tight ${card.accentColor} truncate`}>
                   {card.amount}
-                </h3>
-                <p className="text-[11px] font-bold text-[#5D4037] mt-1.5 flex items-center gap-1.5">
-                  <span className={`inline-block w-2 h-2 rounded-full ${card.accentColor} bg-current`}></span>
-                  {card.subtext}
                 </p>
               </div>
             </motion.div>

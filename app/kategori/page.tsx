@@ -190,8 +190,8 @@ export default function CategoryManagerPage() {
             </div>
           </div>
 
-          {/* Category Cards Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+          {/* Category Cards Grid (3-4 Kolom Kompak: Hanya Ikon & Nama) */}
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3">
             {filteredCategories.map((cat) => {
               const count =
                 cat.type === 'material'
@@ -201,47 +201,41 @@ export default function CategoryManagerPage() {
               return (
                 <div
                   key={cat.id}
-                  className="p-6 rounded-3xl bg-white/92 backdrop-blur-md border-2 border-[#EFE4DA] hover:border-[#FFB300] shadow-md shadow-[#3E2723]/5 hover:shadow-xl hover:shadow-[#3E2723]/10 transition-all duration-300 flex flex-col justify-between"
+                  className="p-2 sm:p-3 rounded-2xl bg-white/95 backdrop-blur-md border border-[#EFE4DA] hover:border-[#FFB300] shadow-2xs hover:shadow-xs transition-all flex flex-col items-center justify-between text-center relative group"
                 >
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <div
-                        className={`w-13 h-13 rounded-2xl flex items-center justify-center ${cat.bgColor} ${cat.textColor} shadow-xs border border-black/5`}
-                      >
-                        <CategoryIcon name={cat.iconName} className="w-6 h-6 stroke-[2.5]" />
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => openEditModal(cat)}
-                          className="w-9 h-9 rounded-xl bg-white/80 hover:bg-[#FFF3E0] text-[#6D4C41] hover:text-[#3E2723] flex items-center justify-center transition-colors border border-[#EFE4DA]"
-                          title="Edit Kategori"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(cat)}
-                          className="w-9 h-9 rounded-xl bg-white/80 hover:bg-rose-50 text-[#6D4C41] hover:text-rose-700 flex items-center justify-center transition-colors border border-[#EFE4DA]"
-                          title="Hapus Kategori"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <h3 className="font-black text-[#3E2723] text-base mt-4">{cat.name}</h3>
-                    <p className="text-xs text-[#6D4C41] mt-1 leading-relaxed line-clamp-2 font-medium">
-                      {cat.description || 'Kategori kustom Dapoer Mamak.'}
-                    </p>
+                  {/* Subtle Action Buttons on Top Right */}
+                  <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-70 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => openEditModal(cat)}
+                      className="p-1 rounded-md text-[#8D6E63] hover:text-[#3E2723] hover:bg-stone-100"
+                      title="Edit Kategori"
+                    >
+                      <Edit2 className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(cat)}
+                      className="p-1 rounded-md text-[#8D6E63] hover:text-rose-600 hover:bg-rose-50"
+                      title="Hapus Kategori"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
                   </div>
 
-                  <div className="pt-4 mt-4 border-t border-[#EFE4DA] flex items-center justify-between text-xs">
-                    <span className="font-bold text-[#6D4C41]">
-                      Terhubung: <strong className="text-[#3E2723] font-black">{count} item</strong>
-                    </span>
-                    <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-[#FFF3E0] text-[#E65100] border border-[#FFE0B2]">
-                      {cat.type === 'material' ? 'Bahan Baku' : 'Produk Jadi'}
-                    </span>
+                  {/* Icon */}
+                  <div
+                    className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center ${cat.bgColor} ${cat.textColor} shadow-2xs border border-black/5 mt-2`}
+                  >
+                    <CategoryIcon name={cat.iconName} className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.5]" />
+                  </div>
+
+                  {/* Category Name & Item Count */}
+                  <div className="mt-2 w-full">
+                    <h3 className="font-black text-[#3E2723] text-xs sm:text-sm truncate px-1">
+                      {cat.name}
+                    </h3>
+                    <p className="text-[10px] text-[#8D6E63] font-medium mt-0.5">
+                      {count} {cat.type === 'material' ? 'bahan' : 'roti'}
+                    </p>
                   </div>
                 </div>
               );
