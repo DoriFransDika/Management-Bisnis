@@ -37,7 +37,7 @@ export function BottomNav() {
       badge: null,
     },
     {
-      label: 'HPP',
+      label: 'Kalkulator',
       href: '/kalkulator',
       icon: Calculator,
       badge: null,

@@ -6,8 +6,9 @@ import Image from 'next/image';
 import { Bell, Sparkles, AlertTriangle, CheckCircle2, X, Heart } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
+import { SupabaseSyncButton } from '@/components/common/SupabaseSyncButton';
 
-export function Header({ onOpenQuickBake }: { onOpenQuickBake?: () => void }) {
+export function Header() {
   const { notifications, markNotificationRead } = useStore();
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -43,15 +44,7 @@ export function Header({ onOpenQuickBake }: { onOpenQuickBake?: () => void }) {
 
         {/* Right Actions */}
         <div className="flex items-center gap-2 md:gap-3">
-          {onOpenQuickBake && (
-            <button
-              onClick={onOpenQuickBake}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] text-xs md:text-sm font-black shadow-md shadow-[#FFB300]/30 hover:brightness-105 active:scale-95 transition-all"
-            >
-              <Sparkles className="w-4 h-4 fill-[#3E2723]" />
-              <span>Baking Cepat</span>
-            </button>
-          )}
+          <SupabaseSyncButton />
 
           {/* Notification Button */}
           <div className="relative">

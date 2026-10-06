@@ -23,41 +23,117 @@ import { useStore } from '@/lib/store';
 import { Sidebar } from '@/components/navigation/Sidebar';
 import { BottomNav } from '@/components/navigation/BottomNav';
 import { Header } from '@/components/navigation/Header';
-import { QuickBakeModal } from '@/components/dashboard/QuickBakeModal';
-import { formatRupiah } from '@/lib/utils';
+
+import { DeleteDatabaseModal } from '@/components/common/DeleteDatabaseModal';
+import { ConfirmSyncDeleteModal } from '@/components/common/ConfirmSyncDeleteModal';
+import { TransactionModal } from '@/components/keuangan/TransactionModal';
+import { formatRupiah, cleanTrxDescription, extractTrxMaterialRef, getTransactionQuantity } from '@/lib/utils';
 import { Transaction } from '@/types';
 
 export default function FinancePage() {
-  const { transactions, summary, addTransaction, deleteTransaction } = useStore();
+  const {
+    transactions,
+    summary,
+    finishedProducts,
+    deleteTransaction,
+    deleteTransactionWithSync,
+    clearTransactionData
+  } = useStore();
+  const [isClearFinanceOpen, setIsClearFinanceOpen] = useState(false);
 
-  const [isBakeOpen, setIsBakeOpen] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedTrxForDetail, setSelectedTrxForDetail] = useState<Transaction | null>(null);
-  const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
-  const [paymentFilter, setPaymentFilter] = useState<'all' | 'Tunai' | 'QRIS / Transfer'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [trxToDeleteSync, setTrxToDeleteSync] = useState<Transaction | null>(null);
+  const [isDeletingSync, setIsDeletingSync] = useState(false);
 
-  // Form State
-  const [type, setType] = useState<'income' | 'expense'>('income');
-  const [category, setCategory] = useState<Transaction['category']>('Penjualan Toko');
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'Tunai' | 'QRIS / Transfer'>('QRIS / Transfer');
+  // Filters: Rentang Waktu (Hari, Minggu, Bulan, Tahun, Semua) & Jenis Transaksi
+  type FinanceTimeRange = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'all';
+  const [timeRange, setTimeRange] = useState<FinanceTimeRange>('all');
+  const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
+  const [productSearchQuery, setProductSearchQuery] = useState('');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const filteredTransactions = transactions.filter((t) => {
-    const matchesType = filterType === 'all' || t.type === filterType;
-    const matchesPayment = paymentFilter === 'all' || t.paymentMethod === paymentFilter;
-    const matchesSearch =
-      t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.category.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesType && matchesPayment && matchesSearch;
-  });
+  const filteredTransactions = React.useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    return transactions.filter((t) => {
+      // 1. Filter Type (Masuk / Keluar / Semua)
+      const matchesType = filterType === 'all' || t.type === filterType;
+
+      // 2. Filter Rentang Waktu
+      const matchesTime = (() => {
+        if (timeRange === 'all') return true;
+        if (!t.date) return true;
+        if (timeRange === 'daily') return t.date === todayStr;
+
+        try {
+          const trxDate = new Date(t.date);
+          if (isNaN(trxDate.getTime())) return true;
+
+          if (timeRange === 'weekly') {
+            const diffDays = (now.getTime() - trxDate.getTime()) / (1000 * 3600 * 24);
+            return diffDays >= 0 && diffDays <= 7;
+          }
+          if (timeRange === 'monthly') {
+            return trxDate.getMonth() === currentMonth && trxDate.getFullYear() === currentYear;
+          }
+          if (timeRange === 'yearly') {
+            return trxDate.getFullYear() === currentYear;
+          }
+        } catch {
+          return true;
+        }
+        return true;
+      })();
+
+      // 3. Pencarian Produk / Kategori
+      const q = productSearchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        t.description.toLowerCase().includes(q) ||
+        t.category.toLowerCase().includes(q);
+
+      return matchesType && matchesTime && matchesSearch;
+    });
+  }, [transactions, filterType, timeRange, productSearchQuery]);
+
+  // Kalkulasi Ringkasan Dinamis Sesuai Filter
+  const dynamicSummary = React.useMemo(() => {
+    const totalIncome = filteredTransactions
+      .filter((t) => t.type === 'income')
+      .reduce((acc, curr) => acc + curr.amount, 0);
+    const totalExpense = filteredTransactions
+      .filter((t) => t.type === 'expense')
+      .reduce((acc, curr) => acc + curr.amount, 0);
+    return {
+      totalIncome,
+      totalExpense,
+      netProfit: totalIncome - totalExpense,
+    };
+  }, [filteredTransactions]);
+
+  // Informasi Pelacakan Penjualan Produk Spesifik
+  const productSalesInfo = React.useMemo(() => {
+    if (!productSearchQuery.trim()) return null;
+    const q = productSearchQuery.toLowerCase().trim();
+    const salesTrx = filteredTransactions.filter(
+      (t) => t.type === 'income' && (t.description.toLowerCase().includes(q) || t.category.toLowerCase().includes(q))
+    );
+    const totalSales = salesTrx.reduce((sum, t) => sum + t.amount, 0);
+    return {
+      query: productSearchQuery.trim(),
+      count: salesTrx.length,
+      totalSales,
+    };
+  }, [filteredTransactions, productSearchQuery]);
 
   // Group transactions by date for daily breakdown
   const groupedTransactions = React.useMemo(() => {
@@ -116,29 +192,40 @@ export default function FinancePage() {
     return groups;
   }, [filteredTransactions]);
 
-  const handleAddTransaction = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!amount || Number(amount) <= 0 || !description.trim()) return;
+  const handleDeleteTrx = (trx: Transaction) => {
+    const isMaterialExpense =
+      trx.type === 'expense' &&
+      (trx.category === 'Belanja Bahan Baku' ||
+        Boolean(extractTrxMaterialRef(trx.description)) ||
+        trx.description.toLowerCase().includes('belanja'));
 
-    addTransaction({
-      date: new Date().toISOString().split('T')[0],
-      type,
-      category,
-      amount: Number(amount),
-      description: description.trim(),
-      paymentMethod,
-    });
-
-    setAmount('');
-    setDescription('');
-    setShowAddModal(false);
-    showToast(`Transaksi ${formatRupiah(Number(amount))} berhasil dicatat.`);
+    if (isMaterialExpense) {
+      setTrxToDeleteSync(trx);
+    } else {
+      if (confirm(`Hapus catatan transaksi: "${cleanTrxDescription(trx.description)}"?`)) {
+        deleteTransaction(trx.id);
+        showToast('Transaksi berhasil dihapus.');
+        if (selectedTrxForDetail?.id === trx.id) {
+          setSelectedTrxForDetail(null);
+        }
+      }
+    }
   };
 
-  const handleDeleteTrx = (id: string, desc: string) => {
-    if (confirm(`Hapus catatan transaksi: "${desc}"?`)) {
-      deleteTransaction(id);
-      showToast('Transaksi berhasil dihapus.');
+  const handleConfirmDeleteSync = async () => {
+    if (!trxToDeleteSync) return;
+    setIsDeletingSync(true);
+    try {
+      const res = await deleteTransactionWithSync(trxToDeleteSync.id, true);
+      showToast(res.message);
+      if (selectedTrxForDetail?.id === trxToDeleteSync.id) {
+        setSelectedTrxForDetail(null);
+      }
+      setTrxToDeleteSync(null);
+    } catch {
+      showToast('Gagal menghapus transaksi.');
+    } finally {
+      setIsDeletingSync(false);
     }
   };
 
@@ -160,7 +247,7 @@ export default function FinancePage() {
       <Sidebar />
 
       <div className="flex-1 flex flex-col min-w-0 pb-28 md:pb-12">
-        <Header onOpenQuickBake={() => setIsBakeOpen(true)} />
+        <Header />
 
         {/* Floating Toast Notification */}
         <AnimatePresence>
@@ -207,15 +294,74 @@ export default function FinancePage() {
               <button
                 type="button"
                 onClick={() => setShowAddModal(true)}
-                className="justify-center px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] text-[11px] sm:text-xs font-black flex items-center gap-1.5 shadow-xs sm:shadow-md shadow-[#FFB300]/30 hover:brightness-105 active:scale-95 transition-all"
+                className="justify-center px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-[#3E2723] hover:bg-[#2C1810] text-[#FFB300] text-[11px] sm:text-xs font-black flex items-center gap-1.5 shadow-md shadow-[#3E2723]/25 active:scale-95 transition-all"
               >
                 <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[3]" />
-                <span className="truncate">Catat Kas Baru</span>
+                <span className="truncate">Transaksi</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsClearFinanceOpen(true)}
+                className="col-span-2 sm:col-span-1 justify-center px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-[11px] sm:text-xs font-black flex items-center gap-1.5 transition-all shadow-xs"
+                title="Hapus Seluruh Data Transaksi dari Supabase"
+              >
+                <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-600" />
+                <span className="truncate">Hapus Pembukuan</span>
               </button>
             </div>
           </div>
 
-          {/* Mini Financial Summary: Compact Cards */}
+          {/* Time Range Filter Bar (Hari Ini, Per Minggu, Per Bulan, Per Tahun, Semua) */}
+          <div className="p-2 sm:p-3 rounded-2xl sm:rounded-3xl bg-white/92 backdrop-blur-md border-1.5 sm:border-2 border-[#EFE4DA] shadow-sm sm:shadow-md shadow-[#3E2723]/5">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3">
+              <div className="flex items-center gap-2 px-1 sm:px-2">
+                <span className="p-1.5 sm:p-2 rounded-xl bg-[#FFF3E0] text-[#FFB300] border border-[#FFE0B2] shrink-0">
+                  <Calendar className="w-4 h-4 text-[#FFB300]" />
+                </span>
+                <div>
+                  <h3 className="text-xs sm:text-sm font-black text-[#3E2723] leading-tight">
+                    Filter Rentang Waktu
+                  </h3>
+                  <p className="text-[10px] text-[#8D6E63] font-medium leading-tight mt-0.5">
+                    {timeRange === 'daily' && 'Menampilkan mutasi kas hari ini'}
+                    {timeRange === 'weekly' && 'Menampilkan mutasi kas 7 hari terakhir'}
+                    {timeRange === 'monthly' && 'Menampilkan mutasi kas bulan berjalan'}
+                    {timeRange === 'yearly' && 'Menampilkan mutasi kas tahun berjalan'}
+                    {timeRange === 'all' && 'Menampilkan seluruh riwayat transaksi kasir & dapur'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Segmented Filter Control */}
+              <div className="grid grid-cols-5 gap-1 sm:gap-1.5 p-1 bg-[#FAF7F2] rounded-xl sm:rounded-2xl border border-[#EFE4DA] w-full lg:w-auto">
+                {[
+                  { id: 'daily', label: 'Hari Ini' },
+                  { id: 'weekly', label: 'Per Minggu' },
+                  { id: 'monthly', label: 'Per Bulan' },
+                  { id: 'yearly', label: 'Per Tahun' },
+                  { id: 'all', label: 'Semua' },
+                ].map((item) => {
+                  const isActive = timeRange === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setTimeRange(item.id as FinanceTimeRange)}
+                      className={`py-2 px-1.5 sm:px-3.5 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-black transition-all text-center truncate ${
+                        isActive
+                          ? 'bg-[#3E2723] text-[#FFB300] shadow-sm'
+                          : 'text-[#6D4C41] hover:text-[#3E2723] hover:bg-white/90'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Mini Financial Summary: Dynamic Filtered Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
             <div className="p-2.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-white/92 backdrop-blur-md border-1.5 sm:border-2 border-[#C8E6C9] shadow-xs">
               <div className="flex items-center justify-between text-[10px] sm:text-xs text-[#8D6E63] mb-1">
@@ -224,7 +370,9 @@ export default function FinancePage() {
                   <ArrowUpRight className="w-3.5 h-3.5 stroke-[2.5]" />
                 </span>
               </div>
-              <p className="text-sm sm:text-lg lg:text-xl font-black text-[#2E7D32] truncate">{formatRupiah(summary.totalIncome)}</p>
+              <p className="text-sm sm:text-lg lg:text-xl font-black text-[#2E7D32] truncate">
+                {formatRupiah(dynamicSummary.totalIncome)}
+              </p>
             </div>
 
             <div className="p-2.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-white/92 backdrop-blur-md border-1.5 sm:border-2 border-[#F8BBD0] shadow-xs">
@@ -234,7 +382,9 @@ export default function FinancePage() {
                   <ArrowDownRight className="w-3.5 h-3.5 stroke-[2.5]" />
                 </span>
               </div>
-              <p className="text-sm sm:text-lg lg:text-xl font-black text-[#C2185B] truncate">{formatRupiah(summary.totalExpense)}</p>
+              <p className="text-sm sm:text-lg lg:text-xl font-black text-[#C2185B] truncate">
+                {formatRupiah(dynamicSummary.totalExpense)}
+              </p>
             </div>
 
             <div className="col-span-2 sm:col-span-1 p-2.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-gradient-to-br from-white/95 to-[#FFF8E1]/90 backdrop-blur-md border-1.5 sm:border-2 border-[#FFE082] shadow-xs flex sm:flex-col justify-between items-center sm:items-stretch">
@@ -244,9 +394,41 @@ export default function FinancePage() {
                 </span>
                 <span className="font-bold">Laba Bersih</span>
               </div>
-              <p className="text-sm sm:text-lg lg:text-xl font-black text-[#E65100] truncate">{formatRupiah(summary.netProfit)}</p>
+              <p className="text-sm sm:text-lg lg:text-xl font-black text-[#E65100] truncate">
+                {formatRupiah(dynamicSummary.netProfit)}
+              </p>
             </div>
           </div>
+
+          {/* Product Sales Highlight Tracker (jika pencarian produk aktif) */}
+          {productSalesInfo && (
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-[#FFF8E1] border-2 border-amber-300 text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-in fade-in">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 rounded-xl bg-[#FFB300] text-[#3E2723] shadow-xs">
+                  <Receipt className="w-4 h-4 stroke-[2.5]" />
+                </span>
+                <div>
+                  <span className="text-[10px] font-black text-amber-800 uppercase tracking-wide block">
+                    Pelacakan Penjualan Produk Spesifik
+                  </span>
+                  <h4 className="font-black text-xs sm:text-sm text-[#3E2723]">
+                    &ldquo;{productSalesInfo.query}&rdquo;
+                  </h4>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 self-end sm:self-auto">
+                <div className="text-right">
+                  <span className="text-[10px] text-amber-800 font-semibold block">Total Omset Produk:</span>
+                  <span className="text-sm sm:text-base font-black text-[#2E7D32]">
+                    {formatRupiah(productSalesInfo.totalSales)}
+                  </span>
+                </div>
+                <span className="text-xs font-black bg-white px-3 py-1 rounded-xl border border-amber-300 text-[#3E2723] shadow-xs">
+                  {productSalesInfo.count} Transaksi
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Transactions Table & Filters */}
           <div className="p-3.5 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl bg-white/92 backdrop-blur-md border-1.5 sm:border-2 border-[#EFE4DA] shadow-xs sm:shadow-md shadow-[#3E2723]/5 space-y-3.5">
@@ -254,19 +436,19 @@ export default function FinancePage() {
               <div className="flex items-center gap-2">
                 <Receipt className="w-5 h-5 text-[#FFB300]" />
                 <h3 className="font-black text-sm sm:text-base text-[#3E2723]">
-                  Tabel Transaksi Harian ({filteredTransactions.length})
+                  Tabel Transaksi ({filteredTransactions.length})
                 </h3>
               </div>
 
-              {/* Filters */}
-              <div className="flex flex-wrap items-center gap-2">
+              {/* Filter Type & Search Produk */}
+              <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
                 {/* Type Filter */}
                 <div className="flex items-center p-1 bg-white/80 rounded-2xl border border-[#EFE4DA] text-xs">
                   <button
                     type="button"
                     onClick={() => setFilterType('all')}
                     className={`px-2.5 py-1 rounded-xl font-black transition-all ${
-                      filterType === 'all' ? 'bg-[#3E2723] text-white shadow-xs' : 'text-[#6D4C41] hover:text-[#3E2723]'
+                      filterType === 'all' ? 'bg-[#3E2723] text-[#FFB300] shadow-xs' : 'text-[#6D4C41] hover:text-[#3E2723]'
                     }`}
                   >
                     Semua
@@ -291,52 +473,21 @@ export default function FinancePage() {
                   </button>
                 </div>
 
-                {/* Payment Method Filter */}
-                <div className="flex items-center p-1 bg-white/80 rounded-2xl border border-[#EFE4DA] text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentFilter('all')}
-                    className={`px-2.5 py-1 rounded-xl font-black transition-all ${
-                      paymentFilter === 'all' ? 'bg-[#FFB300] text-[#3E2723]' : 'text-[#8D6E63] hover:text-[#3E2723]'
-                    }`}
-                  >
-                    Metode: Semua
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentFilter('Tunai')}
-                    className={`px-2 py-1 rounded-xl font-black transition-all ${
-                      paymentFilter === 'Tunai' ? 'bg-[#FFB300] text-[#3E2723]' : 'text-[#8D6E63] hover:text-[#3E2723]'
-                    }`}
-                  >
-                    Tunai
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentFilter('QRIS / Transfer')}
-                    className={`px-2 py-1 rounded-xl font-black transition-all ${
-                      paymentFilter === 'QRIS / Transfer' ? 'bg-[#FFB300] text-[#3E2723]' : 'text-[#8D6E63] hover:text-[#3E2723]'
-                    }`}
-                  >
-                    QRIS
-                  </button>
-                </div>
-
-                {/* Search Input */}
-                <div className="relative w-full sm:w-52">
+                {/* Search Produk Input */}
+                <div className="relative flex-1 sm:w-64">
                   <Search className="w-3.5 h-3.5 text-[#A1887F] absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Cari keterangan..."
-                    className="w-full bg-white/90 border border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl pl-9 pr-8 py-1 text-xs text-[#3E2723] font-bold focus:outline-none placeholder-[#A1887F]"
+                    value={productSearchQuery}
+                    onChange={(e) => setProductSearchQuery(e.target.value)}
+                    placeholder="Pencarian produk / menu roti..."
+                    className="w-full bg-white/90 border border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl pl-9 pr-8 py-1.5 text-xs text-[#3E2723] font-bold focus:outline-none placeholder-[#A1887F]"
                   />
-                  {searchQuery && (
+                  {productSearchQuery && (
                     <button
                       type="button"
-                      onClick={() => setSearchQuery('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8D6E63]"
+                      onClick={() => setProductSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8D6E63] hover:text-[#3E2723]"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -344,6 +495,30 @@ export default function FinancePage() {
                 </div>
               </div>
             </div>
+
+            {/* Quick Product Chips for Instant Filtering */}
+            {finishedProducts.length > 0 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px]">
+                <span className="text-[10px] font-bold text-[#8D6E63] shrink-0 mr-1">Rekomendasi Produk:</span>
+                {finishedProducts.slice(0, 6).map((prod) => {
+                  const isSelected = productSearchQuery.toLowerCase() === prod.name.toLowerCase();
+                  return (
+                    <button
+                      key={prod.id}
+                      type="button"
+                      onClick={() => setProductSearchQuery(isSelected ? '' : prod.name)}
+                      className={`px-2.5 py-0.5 rounded-full border text-[10px] font-bold transition-all shrink-0 ${
+                        isSelected
+                          ? 'bg-[#FFB300] text-[#3E2723] border-[#FFB300] shadow-xs'
+                          : 'bg-[#FAF7F2] text-[#6D4C41] border-[#EFE4DA] hover:bg-[#FFF3E0]'
+                      }`}
+                    >
+                      {prod.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Scrollable Container with Daily Grouped Table */}
             <div className="max-h-[520px] overflow-y-auto overflow-x-auto rounded-2xl border border-[#EFE4DA] bg-white/70 divide-y divide-[#EFE4DA] scroll-smooth shadow-inner">
@@ -381,60 +556,79 @@ export default function FinancePage() {
                         <thead>
                           <tr className="border-b border-[#EFE4DA]/80 text-[10px] uppercase font-black text-[#8D6E63] bg-white/50">
                             <th className="py-2 px-3">Keterangan</th>
+                            <th className="py-2 px-3 text-center sm:text-left w-24">Jumlah</th>
                             <th className="py-2 px-2 text-center w-20">Jenis</th>
                             <th className="py-2 px-3 text-right">Nominal</th>
                             <th className="py-2 px-2 text-center w-14">Aksi</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#EFE4DA]/60">
-                          {group.items.map((trx) => (
-                            <tr
-                              key={trx.id}
-                              onClick={() => setSelectedTrxForDetail(trx)}
-                              className="hover:bg-[#FFFDF9] transition-colors cursor-pointer"
-                            >
-                              <td className="py-2.5 px-3 min-w-0">
-                                <p className="font-black text-[#3E2723] text-xs truncate max-w-[140px] sm:max-w-xs">{trx.description}</p>
-                                <p className="text-[10px] text-[#8D6E63] font-medium truncate">
-                                  {trx.category} • {trx.paymentMethod}
-                                </p>
-                              </td>
-                              <td className="py-2.5 px-2 text-center whitespace-nowrap">
-                                {trx.type === 'income' ? (
-                                  <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-[#E8F5E9] text-[#2E7D32]">
-                                    <ArrowUpRight className="w-2.5 h-2.5" />
-                                    Masuk
+                          {group.items.map((trx) => {
+                            const qtyStr = getTransactionQuantity(trx);
+                            return (
+                              <tr
+                                key={trx.id}
+                                onClick={() => setSelectedTrxForDetail(trx)}
+                                className="hover:bg-[#FFFDF9] transition-colors cursor-pointer"
+                              >
+                                <td className="py-2.5 px-3 min-w-0">
+                                  <p className="font-black text-[#3E2723] text-xs truncate max-w-[140px] sm:max-w-xs">
+                                    {cleanTrxDescription(trx.description)}
+                                  </p>
+                                  <p className="text-[10px] text-[#8D6E63] font-medium truncate">
+                                    {trx.category}
+                                  </p>
+                                </td>
+                                <td className="py-2.5 px-3 text-center sm:text-left whitespace-nowrap">
+                                  <span
+                                    className={`inline-block text-xs font-black px-2 py-0.5 rounded-lg border ${
+                                      qtyStr !== '-'
+                                        ? trx.type === 'income'
+                                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                          : 'bg-stone-100 text-[#3E2723] border-[#EFE4DA]'
+                                        : 'text-[#8D6E63]/40 border-transparent font-normal'
+                                    }`}
+                                  >
+                                    {qtyStr}
                                   </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-[#FCE4EC] text-[#C2185B]">
-                                    <ArrowDownRight className="w-2.5 h-2.5" />
-                                    Keluar
+                                </td>
+                                <td className="py-2.5 px-2 text-center whitespace-nowrap">
+                                  {trx.type === 'income' ? (
+                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-[#E8F5E9] text-[#2E7D32]">
+                                      <ArrowUpRight className="w-2.5 h-2.5" />
+                                      Masuk
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-[#FCE4EC] text-[#C2185B]">
+                                      <ArrowDownRight className="w-2.5 h-2.5" />
+                                      Keluar
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                                  <span
+                                    className={`text-xs sm:text-sm font-black ${
+                                      trx.type === 'income' ? 'text-[#2E7D32]' : 'text-[#C2185B]'
+                                    }`}
+                                  >
+                                    {trx.type === 'income' ? '+' : '-'} {formatRupiah(trx.amount)}
                                   </span>
-                                )}
-                              </td>
-                              <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                                <span
-                                  className={`text-xs sm:text-sm font-black ${
-                                    trx.type === 'income' ? 'text-[#2E7D32]' : 'text-[#C2185B]'
-                                  }`}
-                                >
-                                  {trx.type === 'income' ? '+' : '-'} {formatRupiah(trx.amount)}
-                                </span>
-                              </td>
-                              <td className="py-2.5 px-2 text-center whitespace-nowrap">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedTrxForDetail(trx);
-                                  }}
-                                  className="px-2 py-1 rounded-lg text-[10px] font-black bg-white border border-[#EFE4DA] text-[#6D4C41] hover:text-[#3E2723] hover:border-[#FFB300] shadow-2xs"
-                                >
-                                  Lihat
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                                </td>
+                                <td className="py-2.5 px-2 text-center whitespace-nowrap">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedTrxForDetail(trx);
+                                    }}
+                                    className="px-2 py-1 rounded-lg text-[10px] font-black bg-white border border-[#EFE4DA] text-[#6D4C41] hover:text-[#3E2723] hover:border-[#FFB300] shadow-2xs"
+                                  >
+                                    Lihat
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -447,140 +641,15 @@ export default function FinancePage() {
       </div>
 
       <BottomNav />
-      <QuickBakeModal isOpen={isBakeOpen} onClose={() => setIsBakeOpen(false)} />
 
-      {/* Manual Transaction Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white border-2 border-[#EFE4DA] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl shadow-[#3E2723]/20 p-6 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-[#EFE4DA]">
-              <h3 className="font-black text-[#3E2723] text-base">Catat Transaksi Manual</h3>
-              <button
-                type="button"
-                onClick={() => setShowAddModal(false)}
-                className="w-8 h-8 rounded-full bg-[#FAF7F2] text-[#6D4C41] flex items-center justify-center"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <form onSubmit={handleAddTransaction} className="space-y-3.5">
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setType('income');
-                    setCategory('Penjualan Toko');
-                  }}
-                  className={`py-2.5 rounded-2xl text-xs font-black border transition-all ${
-                    type === 'income'
-                      ? 'bg-[#E8F5E9] border-[#2E7D32] text-[#2E7D32]'
-                      : 'bg-white border-[#EFE4DA] text-[#8D6E63]'
-                  }`}
-                >
-                  Pemasukan (+)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setType('expense');
-                    setCategory('Belanja Bahan Baku');
-                  }}
-                  className={`py-2.5 rounded-2xl text-xs font-black border transition-all ${
-                    type === 'expense'
-                      ? 'bg-[#FCE4EC] border-[#C2185B] text-[#C2185B]'
-                      : 'bg-white border-[#EFE4DA] text-[#8D6E63]'
-                  }`}
-                >
-                  Pengeluaran (-)
-                </button>
-              </div>
+      {/* Transaction Modal (Reused across Dashboard & Keuangan) */}
+      <TransactionModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSuccess={(msg) => showToast(msg)}
+      />
 
-              <div>
-                <label className="block text-xs font-black text-[#3E2723] mb-1">
-                  Nominal Transaksi (Rp)
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="Contoh: 150000"
-                  className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-4 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-black text-[#3E2723] mb-1">Keterangan</label>
-                <input
-                  type="text"
-                  required
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Contoh: Beli telur 5 kg, pesanan arisan 30 roti"
-                  className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-4 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-black text-[#3E2723] mb-1">Kategori</label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value as Transaction['category'])}
-                    className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-3 py-2 text-xs text-[#3E2723] font-bold focus:outline-none"
-                  >
-                    {type === 'income' ? (
-                      <>
-                        <option value="Penjualan Toko">Penjualan Toko</option>
-                        <option value="Pesanan Khusus / Katering">Pesanan Khusus</option>
-                        <option value="Lainnya">Lainnya</option>
-                      </>
-                    ) : (
-                      <>
-                        <option value="Belanja Bahan Baku">Belanja Bahan</option>
-                        <option value="Operasional Dapur">Operasional (Gas/Listrik)</option>
-                        <option value="Kemasan & Packaging">Kemasan / Box</option>
-                        <option value="Gaji Pegawai">Gaji Pegawai</option>
-                        <option value="Lainnya">Lainnya</option>
-                      </>
-                    )}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-black text-[#3E2723] mb-1">Metode Bayar</label>
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value as 'Tunai' | 'QRIS / Transfer')}
-                    className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-3 py-2 text-xs text-[#3E2723] font-bold focus:outline-none"
-                  >
-                    <option value="Tunai">Tunai Kas</option>
-                    <option value="QRIS / Transfer">QRIS / Transfer</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-[#EFE4DA] flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2.5 rounded-2xl border border-[#EFE4DA] text-xs font-black text-[#8D6E63]"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] text-xs font-black shadow-md shadow-[#FFB300]/30 hover:brightness-105 active:scale-95 transition-all"
-                >
-                  Simpan Transaksi
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
       {/* Detail Transaction Modal */}
       {selectedTrxForDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-200">
@@ -595,7 +664,7 @@ export default function FinancePage() {
               <button
                 type="button"
                 onClick={() => setSelectedTrxForDetail(null)}
-                className="w-7 h-7 rounded-full bg-[#FAF7F2] text-[#6D4C41] flex items-center justify-center hover:bg-stone-200"
+                className="w-7 h-7 rounded-full bg-[#FAF7F2] text-[#6D4C41] flex items-center justify-center hover:bg-stone-200 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -626,15 +695,19 @@ export default function FinancePage() {
             <div className="space-y-2.5 text-xs">
               <div className="flex justify-between py-1 border-b border-[#EFE4DA]/60">
                 <span className="text-[#8D6E63] font-medium">Keterangan:</span>
-                <span className="font-black text-[#3E2723] text-right max-w-[65%]">{selectedTrxForDetail.description}</span>
+                <span className="font-black text-[#3E2723] text-right max-w-[65%]">
+                  {cleanTrxDescription(selectedTrxForDetail.description)}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-[#EFE4DA]/60">
+                <span className="text-[#8D6E63] font-medium">Jumlah / Kuantitas:</span>
+                <span className="font-black text-[#3E2723]">
+                  {getTransactionQuantity(selectedTrxForDetail)}
+                </span>
               </div>
               <div className="flex justify-between py-1 border-b border-[#EFE4DA]/60">
                 <span className="text-[#8D6E63] font-medium">Kategori:</span>
                 <span className="font-bold text-[#E65100]">{selectedTrxForDetail.category}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-[#EFE4DA]/60">
-                <span className="text-[#8D6E63] font-medium">Metode:</span>
-                <span className="font-bold text-[#3E2723]">{selectedTrxForDetail.paymentMethod}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-[#EFE4DA]/60">
                 <span className="text-[#8D6E63] font-medium">Tanggal:</span>
@@ -647,10 +720,9 @@ export default function FinancePage() {
               <button
                 type="button"
                 onClick={() => {
-                  handleDeleteTrx(selectedTrxForDetail.id, selectedTrxForDetail.description);
-                  setSelectedTrxForDetail(null);
+                  handleDeleteTrx(selectedTrxForDetail);
                 }}
-                className="px-3 py-2 rounded-xl text-xs font-black text-rose-600 hover:bg-rose-50 flex items-center gap-1 border border-rose-200"
+                className="px-3 py-2 rounded-xl text-xs font-black text-rose-600 hover:bg-rose-50 flex items-center gap-1 border border-rose-200 transition-colors"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Hapus</span>
@@ -658,7 +730,7 @@ export default function FinancePage() {
               <button
                 type="button"
                 onClick={() => setSelectedTrxForDetail(null)}
-                className="px-4 py-2 rounded-xl bg-[#3E2723] text-white text-xs font-black hover:bg-black"
+                className="px-4 py-2 rounded-xl bg-[#3E2723] text-white text-xs font-black hover:bg-black transition-colors"
               >
                 Tutup
               </button>
@@ -666,6 +738,35 @@ export default function FinancePage() {
           </div>
         </div>
       )}
+
+      {/* Synchronized Stock & Finance Deletion Confirmation Modal */}
+      {trxToDeleteSync && (
+        <ConfirmSyncDeleteModal
+          isOpen={Boolean(trxToDeleteSync)}
+          onClose={() => setTrxToDeleteSync(null)}
+          onConfirm={handleConfirmDeleteSync}
+          title="Hapus Pengeluaran & Sinkronkan Stok"
+          itemName={cleanTrxDescription(trxToDeleteSync.description)}
+          sourceModule="Keuangan"
+          impactDescription="Catatan ini merupakan pembelian bahan baku. Menghapusnya akan otomatis menyesuaikan/mengurangi stok bahan terkait di Dapur Toko dari database Supabase."
+          isDeleting={isDeletingSync}
+        />
+      )}
+
+      {/* Delete Financial Database Confirmation Modal */}
+      <DeleteDatabaseModal
+        isOpen={isClearFinanceOpen}
+        onClose={() => setIsClearFinanceOpen(false)}
+        onConfirm={async () => {
+          const res = await clearTransactionData();
+          showToast(res.message);
+        }}
+        title="Hapus Seluruh Riwayat Pembukuan"
+        itemCountText={`${transactions.length} Catatan Transaksi Kasir & Dapur`}
+        description="Tindakan ini akan mengosongkan seluruh riwayat pemasukan penjualan dan pengeluaran belanja dapur dari database Supabase dan penyimpanan lokal."
+        warningNote="Seluruh catatan kas dan mutasi keuangan akan dihapus permanen. Total kas dan nominal keuntungan akan direset menjadi Rp 0."
+        confirmButtonText="Ya, Hapus Semua Transaksi dari Supabase"
+      />
     </div>
   );
 }

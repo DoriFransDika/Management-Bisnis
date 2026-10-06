@@ -1,3 +1,5 @@
+export type UnitGroup = 'weight' | 'volume' | 'count';
+
 export interface Category {
   id: string;
   name: string;
@@ -6,6 +8,7 @@ export interface Category {
   bgColor: string; // Tailwind class or hex
   textColor: string;
   description?: string;
+  unitGroup?: UnitGroup; // 'weight' (kg/gr) | 'volume' (liter/ml) | 'count' (pcs/butir/kaleng/botol/kotak/pack)
 }
 
 export interface RawMaterial {
@@ -14,7 +17,7 @@ export interface RawMaterial {
   categoryId: string;
   category: string; // Nama kategori untuk display
   stock: number;
-  unit: 'kg' | 'gr' | 'butir' | 'liter' | 'ml' | 'pack' | 'pcs';
+  unit: 'kg' | 'gr' | 'butir' | 'liter' | 'ml' | 'pack' | 'pcs' | 'kaleng' | 'botol' | 'kotak';
   minStock: number;
   costPerUnit: number;
   updatedAt: string;
@@ -49,6 +52,7 @@ export interface Transaction {
   amount: number;
   description: string;
   paymentMethod: 'Tunai' | 'QRIS / Transfer';
+  quantity?: string;
 }
 
 export interface ProductionLog {

@@ -46,8 +46,8 @@ export function QuickSaleModal({ isOpen, onClose }: QuickSaleModalProps) {
               <ShoppingBag className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-black text-[#4A3B32] text-base">Kasir Penjualan Roti</h3>
-              <p className="text-xs text-[#8C7A6B]">Pencatatan kasir toko offline & pesanan</p>
+              <h3 className="font-black text-[#4A3B32] text-base">Transaksi Penjualan</h3>
+              <p className="text-xs text-[#8C7A6B]">Pencatatan kasir toko & pesanan roti</p>
             </div>
           </div>
           <button
@@ -87,7 +87,7 @@ export function QuickSaleModal({ isOpen, onClose }: QuickSaleModalProps) {
             >
               {finishedProducts.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} — Rp {p.sellingPrice.toLocaleString('id-ID')} (Sisa: {p.stock} {p.unit})
+                  {p.name} — {formatRupiah(p.sellingPrice)} (Sisa: {p.stock} {p.unit})
                 </option>
               ))}
             </select>

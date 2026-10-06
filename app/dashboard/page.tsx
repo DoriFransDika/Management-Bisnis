@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
-  Sparkles,
   ShoppingBag,
   Boxes,
   ArrowRight,
@@ -12,7 +11,7 @@ import {
   Receipt,
   Heart
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useStore } from '@/lib/store';
 import { Sidebar } from '@/components/navigation/Sidebar';
 import { BottomNav } from '@/components/navigation/BottomNav';
@@ -20,17 +19,22 @@ import { Header } from '@/components/navigation/Header';
 import { SummaryCards } from '@/components/dashboard/SummaryCards';
 import { SalesChart } from '@/components/dashboard/SalesChart';
 import { NotificationPanel } from '@/components/dashboard/NotificationPanel';
-import { QuickBakeModal } from '@/components/dashboard/QuickBakeModal';
-import { QuickSaleModal } from '@/components/dashboard/QuickSaleModal';
-import { QuickRestockModal } from '@/components/dashboard/QuickRestockModal';
-import { formatRupiah } from '@/lib/utils';
+import { TransactionModal } from '@/components/keuangan/TransactionModal';
+import { ItemModal } from '@/components/stok/ItemModal';
+import { formatRupiah, cleanTrxDescription } from '@/lib/utils';
+import { Check } from 'lucide-react';
 
 export default function DashboardPage() {
   const { transactions } = useStore();
 
-  const [isBakeModalOpen, setIsBakeModalOpen] = useState(false);
   const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
-  const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
+  const [isAddMaterialOpen, setIsAddMaterialOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   return (
     <div className="min-h-screen bg-[url('/bg.png')] bg-cover bg-center bg-fixed bg-no-repeat text-[#3E2723] flex flex-col md:flex-row font-sans">
@@ -40,7 +44,7 @@ export default function DashboardPage() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 pb-28 md:pb-12">
         {/* Header */}
-        <Header onOpenQuickBake={() => setIsBakeModalOpen(true)} />
+        <Header />
 
         <main className="p-3 sm:p-5 lg:p-6 space-y-3 sm:space-y-4 max-w-7xl w-full mx-auto">
           {/* Welcome Banner - Compact */}
@@ -72,39 +76,46 @@ export default function DashboardPage() {
                   </span>
                 </div>
                 <p className="text-[10px] sm:text-xs text-[#8D6E63] font-medium truncate">
-                  Manajemen Roti & Kasir Dapur
+                  Manajemen Toko & Buku Kas Dapur
                 </p>
               </div>
             </div>
 
-            {/* Action Bar Pills */}
-            <div className="grid grid-cols-3 sm:flex sm:items-center gap-1.5 relative z-10 w-full sm:w-auto">
-              <button
-                type="button"
-                onClick={() => setIsBakeModalOpen(true)}
-                className="flex items-center justify-center gap-1 px-2.5 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] text-[11px] font-black shadow-xs hover:brightness-105 active:scale-95 transition-all"
-              >
-                <Sparkles className="w-3.5 h-3.5 fill-[#3E2723] shrink-0" />
-                <span>Baking</span>
-              </button>
+            {/* Action Bar Pills - Consistent Styling */}
+            <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 relative z-10 w-full sm:w-auto">
               <button
                 type="button"
                 onClick={() => setIsSaleModalOpen(true)}
-                className="flex items-center justify-center gap-1 px-2.5 py-1.5 sm:py-2 rounded-xl bg-[#E8F5E9] hover:bg-[#C8E6C9] border border-[#A5D6A7] text-[#1B5E20] text-[11px] font-black active:scale-95 transition-all shadow-xs"
+                className="flex items-center justify-center gap-1.5 px-4 py-2 sm:py-2.5 rounded-xl bg-[#3E2723] hover:bg-[#2C1810] text-[#FFB300] text-xs font-black active:scale-95 transition-all shadow-md shadow-[#3E2723]/25"
               >
-                <ShoppingBag className="w-3.5 h-3.5 text-[#2E7D32] shrink-0" />
-                <span>Kasir</span>
+                <Receipt className="w-3.5 h-3.5 stroke-[2.5] shrink-0 text-[#FFB300]" />
+                <span>Transaksi</span>
               </button>
               <button
                 type="button"
-                onClick={() => setIsRestockModalOpen(true)}
-                className="flex items-center justify-center gap-1 px-2.5 py-1.5 sm:py-2 rounded-xl bg-[#FFF3E0] hover:bg-[#FFE0B2] border border-[#FFD54F] text-[#3E2723] text-[11px] font-black active:scale-95 transition-all shadow-xs"
+                onClick={() => setIsAddMaterialOpen(true)}
+                className="flex items-center justify-center gap-1.5 px-3.5 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-[#FFB300] to-[#FFA000] hover:brightness-105 text-[#3E2723] text-xs font-black active:scale-95 transition-all shadow-md shadow-[#FFB300]/25"
               >
-                <Boxes className="w-3.5 h-3.5 text-[#E65100] shrink-0" />
-                <span>Belanja</span>
+                <Boxes className="w-3.5 h-3.5 text-[#3E2723] stroke-[2.5] shrink-0" />
+                <span>Tambah Stok</span>
               </button>
             </div>
           </motion.div>
+
+          {/* Floating Toast Notification */}
+          <AnimatePresence>
+            {toastMessage && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="fixed top-20 right-4 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#3E2723] text-white text-xs font-black shadow-xl border border-[#FFB300]"
+              >
+                <Check className="w-4 h-4 text-[#FFB300]" />
+                <span>{toastMessage}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Bagian Atas: 4 Kotak Metrik Utama (Grid 2 Kolom di HP) */}
           <SummaryCards />
@@ -147,7 +158,9 @@ export default function DashboardPage() {
                           }`}
                         />
                         <div className="min-w-0">
-                          <p className="font-black text-[#3E2723] text-xs sm:text-sm truncate">{trx.description}</p>
+                          <p className="font-black text-[#3E2723] text-xs sm:text-sm truncate">
+                            {cleanTrxDescription(trx.description)}
+                          </p>
                           <p className="text-[10px] sm:text-[11px] text-[#8D6E63] mt-0.5 font-medium truncate">
                             {trx.date} • {trx.category} • <span className="text-[#3E2723] font-bold">{trx.paymentMethod}</span>
                           </p>
@@ -170,7 +183,7 @@ export default function DashboardPage() {
 
             {/* Bagian Samping/Kanan: Panel Notifikasi Real-Time */}
             <div className="lg:col-span-1">
-              <NotificationPanel onOpenQuickBake={() => setIsBakeModalOpen(true)} />
+              <NotificationPanel />
             </div>
           </div>
         </main>
@@ -180,9 +193,16 @@ export default function DashboardPage() {
       <BottomNav />
 
       {/* Action Modals */}
-      <QuickBakeModal isOpen={isBakeModalOpen} onClose={() => setIsBakeModalOpen(false)} />
-      <QuickSaleModal isOpen={isSaleModalOpen} onClose={() => setIsSaleModalOpen(false)} />
-      <QuickRestockModal isOpen={isRestockModalOpen} onClose={() => setIsRestockModalOpen(false)} />
+      <TransactionModal
+        isOpen={isSaleModalOpen}
+        onClose={() => setIsSaleModalOpen(false)}
+        onSuccess={(msg) => showToast(msg)}
+      />
+      <ItemModal
+        isOpen={isAddMaterialOpen}
+        onClose={() => setIsAddMaterialOpen(false)}
+        mode="material"
+      />
     </div>
   );
 }

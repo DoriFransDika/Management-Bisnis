@@ -50,7 +50,7 @@ export function Sidebar() {
       badge: null,
     },
     {
-      label: 'Kalkulator HPP',
+      label: 'Kalkulator',
       href: '/kalkulator',
       icon: Calculator,
       badge: null,

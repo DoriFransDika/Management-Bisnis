@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   Category,
   RawMaterial,
@@ -9,6 +9,8 @@ import {
   ActivityNotification,
   BusinessSummary
 } from '@/types';
+import { supabase, supabaseService } from './supabase';
+import { extractTrxMaterialRef, formatRupiah } from './utils';
 import {
   INITIAL_CATEGORIES,
   INITIAL_RAW_MATERIALS,
@@ -24,6 +26,8 @@ interface UserSession {
   isAuthenticated: boolean;
 }
 
+export type SupabaseStatus = 'loading' | 'connected' | 'disconnected' | 'needs_setup';
+
 interface StoreContextType {
   user: UserSession;
   login: (email: string, pass: string) => boolean;
@@ -34,6 +38,11 @@ interface StoreContextType {
   transactions: Transaction[];
   notifications: ActivityNotification[];
   summary: BusinessSummary;
+  // Supabase Status & Sync
+  supabaseStatus: SupabaseStatus;
+  isSupabaseLoading: boolean;
+  syncWithSupabase: () => Promise<void>;
+  seedSupabaseDatabase: () => Promise<{ success: boolean; message: string }>;
   // Category CRUD
   addCategory: (cat: Omit<Category, 'id'>) => Category;
   updateCategory: (id: string, updated: Partial<Category>) => void;
@@ -43,9 +52,11 @@ interface StoreContextType {
   addRawMaterialStock: (materialId: string, amount: number, totalCost: number) => void;
   recordSale: (productId: string, qty: number, paymentMethod: 'Tunai' | 'QRIS / Transfer', customPrice?: number) => { success: boolean; message: string };
   // Item CRUD & Quick Actions
-  addNewMaterial: (material: Omit<RawMaterial, 'id' | 'updatedAt'>) => void;
+  addNewMaterial: (material: Omit<RawMaterial, 'id' | 'updatedAt'>, totalPurchaseCost?: number) => void;
+  reduceCategoryStock: (categoryId: string, amountKg: number, reason: string) => { success: boolean; message: string };
   updateMaterial: (id: string, updated: Partial<RawMaterial>) => void;
   deleteMaterial: (id: string) => void;
+  deleteMaterialWithSync: (materialId: string, syncFinance?: boolean) => Promise<{ success: boolean; message: string; affectedTrxCount: number }>;
   quickAdjustMaterialStock: (id: string, delta: number) => void;
   addNewProduct: (product: Omit<FinishedProduct, 'id'>) => void;
   updateProduct: (id: string, updated: Partial<FinishedProduct>) => void;
@@ -53,8 +64,13 @@ interface StoreContextType {
   quickAdjustProductStock: (id: string, delta: number) => void;
   addTransaction: (trx: Omit<Transaction, 'id'>) => void;
   deleteTransaction: (id: string) => void;
+  deleteTransactionWithSync: (id: string, syncStock?: boolean) => Promise<{ success: boolean; message: string; affectedMaterialName?: string }>;
   markNotificationRead: (id: string) => void;
   resetAllData: () => void;
+  // Database / Bulk Data Deletion
+  clearStockData: (type?: 'materials' | 'products' | 'all') => Promise<{ success: boolean; message: string }>;
+  clearTransactionData: () => Promise<{ success: boolean; message: string }>;
+  clearEntireDatabase: () => Promise<{ success: boolean; message: string }>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -76,14 +92,75 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: false,
   });
 
-  const [categories, setCategories] = useState<Category[]>(INITIAL_CATEGORIES);
-  const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>(INITIAL_RAW_MATERIALS);
-  const [finishedProducts, setFinishedProducts] = useState<FinishedProduct[]>(INITIAL_FINISHED_PRODUCTS);
-  const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
-  const [notifications, setNotifications] = useState<ActivityNotification[]>(INITIAL_NOTIFICATIONS);
-  const [isLoaded, setIsLoaded] = useState(false);
+  // State is purely initialized from Supabase (starts empty, zero dummy data)
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
+  const [finishedProducts, setFinishedProducts] = useState<FinishedProduct[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [notifications, setNotifications] = useState<ActivityNotification[]>([]);
 
-  // Load from localStorage on client mount
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [supabaseStatus, setSupabaseStatus] = useState<SupabaseStatus>('loading');
+  const [isSupabaseLoading, setIsSupabaseLoading] = useState(false);
+
+  // Sync data directly from Supabase
+  const syncWithSupabase = useCallback(async () => {
+    setIsSupabaseLoading(true);
+    try {
+      const [cats, mats, prods, trx, notifs] = await Promise.all([
+        supabaseService.getCategories(),
+        supabaseService.getRawMaterials(),
+        supabaseService.getFinishedProducts(),
+        supabaseService.getTransactions(),
+        supabaseService.getNotifications(),
+      ]);
+
+      if (cats === null) {
+        setSupabaseStatus('needs_setup');
+      } else {
+        setSupabaseStatus('connected');
+        setCategories(cats);
+        if (mats !== null) setRawMaterials(mats);
+        if (prods !== null) setFinishedProducts(prods);
+        if (trx !== null) setTransactions(trx);
+        if (notifs !== null) setNotifications(notifs);
+      }
+    } catch (err) {
+      console.warn('[Store] Supabase fetch error:', err);
+      setSupabaseStatus('disconnected');
+    } finally {
+      setIsSupabaseLoading(false);
+    }
+  }, []);
+
+  // One-click seeding of data to Supabase
+  const seedSupabaseDatabase = async () => {
+    setIsSupabaseLoading(true);
+    try {
+      const catsToSeed = categories.length > 0 ? categories : INITIAL_CATEGORIES;
+      const matsToSeed = rawMaterials.length > 0 ? rawMaterials : INITIAL_RAW_MATERIALS;
+      const prodsToSeed = finishedProducts.length > 0 ? finishedProducts : INITIAL_FINISHED_PRODUCTS;
+      const trxToSeed = transactions.length > 0 ? transactions : INITIAL_TRANSACTIONS;
+      const notifsToSeed = notifications.length > 0 ? notifications : INITIAL_NOTIFICATIONS;
+
+      const res = await supabaseService.seedInitialData(
+        catsToSeed,
+        matsToSeed,
+        prodsToSeed,
+        trxToSeed,
+        notifsToSeed
+      );
+      if (res.success) {
+        setSupabaseStatus('connected');
+        await syncWithSupabase();
+      }
+      return res;
+    } finally {
+      setIsSupabaseLoading(false);
+    }
+  };
+
+  // 1. Initial Load: Read localStorage first for immediate render, then pull from Supabase
   useEffect(() => {
     try {
       const storedUser = localStorage.getItem(STORAGE_KEYS.USER);
@@ -108,9 +185,36 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoaded(true);
     }
-  }, []);
 
-  // Save changes to localStorage
+    // Connect to Supabase
+    syncWithSupabase();
+
+    // Setup Supabase Realtime listeners for true multi-device sync
+    const channel = supabase
+      .channel('realtime-dapurmamak-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => {
+        supabaseService.getCategories().then((c) => c !== null && setCategories(c));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'raw_materials' }, () => {
+        supabaseService.getRawMaterials().then((m) => m !== null && setRawMaterials(m));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'finished_products' }, () => {
+        supabaseService.getFinishedProducts().then((p) => p !== null && setFinishedProducts(p));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
+        supabaseService.getTransactions().then((t) => t !== null && setTransactions(t));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
+        supabaseService.getNotifications().then((n) => n !== null && setNotifications(n));
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [syncWithSupabase]);
+
+  // 2. Save changes to localStorage as local cache
   useEffect(() => {
     if (!isLoaded) return;
     try {
@@ -176,18 +280,75 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(STORAGE_KEYS.USER);
   };
 
-  // Reset to default
+  // Re-sync all live data from Supabase
   const resetAllData = () => {
-    setCategories(INITIAL_CATEGORIES);
-    setRawMaterials(INITIAL_RAW_MATERIALS);
-    setFinishedProducts(INITIAL_FINISHED_PRODUCTS);
-    setTransactions(INITIAL_TRANSACTIONS);
-    setNotifications(INITIAL_NOTIFICATIONS);
     localStorage.removeItem(STORAGE_KEYS.CATEGORIES);
     localStorage.removeItem(STORAGE_KEYS.MATERIALS);
     localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
     localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
     localStorage.removeItem(STORAGE_KEYS.NOTIFICATIONS);
+    syncWithSupabase();
+  };
+
+  // Bulk Database Deletion Methods
+  const clearStockData = async (type: 'materials' | 'products' | 'all' = 'all') => {
+    setIsSupabaseLoading(true);
+    try {
+      if (type === 'materials' || type === 'all') {
+        setRawMaterials([]);
+        localStorage.removeItem(STORAGE_KEYS.MATERIALS);
+        await supabaseService.clearAllRawMaterials();
+      }
+      if (type === 'products' || type === 'all') {
+        setFinishedProducts([]);
+        localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
+        await supabaseService.clearAllFinishedProducts();
+      }
+      return { success: true, message: 'Data stok berhasil dikosongkan dari sistem dan database Supabase!' };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Gagal menghapus stok';
+      return { success: false, message: msg };
+    } finally {
+      setIsSupabaseLoading(false);
+    }
+  };
+
+  const clearTransactionData = async () => {
+    setIsSupabaseLoading(true);
+    try {
+      setTransactions([]);
+      localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
+      await supabaseService.clearAllTransactions();
+      return { success: true, message: 'Seluruh riwayat transaksi keuangan berhasil dihapus dari database Supabase!' };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Gagal menghapus transaksi';
+      return { success: false, message: msg };
+    } finally {
+      setIsSupabaseLoading(false);
+    }
+  };
+
+  const clearEntireDatabase = async () => {
+    setIsSupabaseLoading(true);
+    try {
+      setCategories([]);
+      setRawMaterials([]);
+      setFinishedProducts([]);
+      setTransactions([]);
+      setNotifications([]);
+      localStorage.removeItem(STORAGE_KEYS.CATEGORIES);
+      localStorage.removeItem(STORAGE_KEYS.MATERIALS);
+      localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
+      localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
+      localStorage.removeItem(STORAGE_KEYS.NOTIFICATIONS);
+      await supabaseService.clearEntireDatabase();
+      return { success: true, message: 'Seluruh database Supabase berhasil dikosongkan!' };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Gagal mengosongkan database';
+      return { success: false, message: msg };
+    } finally {
+      setIsSupabaseLoading(false);
+    }
   };
 
   // CATEGORY CRUD
@@ -197,6 +358,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       id: `cat-${Date.now()}`,
     };
     setCategories((prev) => [...prev, newCat]);
+    supabaseService.insertCategory(newCat).catch(console.error);
     return newCat;
   };
 
@@ -205,7 +367,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       prev.map((c) => {
         if (c.id === id) {
           const newCat = { ...c, ...updated };
-          // If name changed, sync display name in materials and products
           if (updated.name && updated.name !== c.name) {
             setRawMaterials((mats) =>
               mats.map((m) => (m.categoryId === id ? { ...m, category: updated.name! } : m))
@@ -219,10 +380,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         return c;
       })
     );
+    supabaseService.updateCategory(id, updated).catch(console.error);
   };
 
   const deleteCategory = (id: string): { success: boolean; message: string } => {
-    // Check if category is used
     const usedInMat = rawMaterials.some((m) => m.categoryId === id);
     const usedInProd = finishedProducts.some((p) => p.categoryId === id);
     if (usedInMat || usedInProd) {
@@ -232,6 +393,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       };
     }
     setCategories((prev) => prev.filter((c) => c.id !== id));
+    supabaseService.deleteCategory(id).catch(console.error);
     return { success: true, message: 'Kategori berhasil dihapus!' };
   };
 
@@ -260,33 +422,37 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    // Update materials locally & Supabase
     const updatedMaterials = rawMaterials.map((mat) => {
       const recipeItem = product.recipe.find((r) => r.materialId === mat.id);
       if (recipeItem) {
         const consumed = recipeItem.amount * batches;
         const newStock = Math.max(0, Number((mat.stock - consumed).toFixed(2)));
-        return {
+        const updated = {
           ...mat,
           stock: newStock,
           updatedAt: new Date().toISOString().split('T')[0],
         };
+        supabaseService.updateRawMaterial(mat.id, { stock: newStock, updatedAt: updated.updatedAt }).catch(console.error);
+        return updated;
       }
       return mat;
     });
 
     const addedOutput = batches * product.batchYield;
+    const newProductStock = product.stock + addedOutput;
+
     const updatedProducts = finishedProducts.map((p) => {
       if (p.id === productId) {
-        return {
-          ...p,
-          stock: p.stock + addedOutput,
-        };
+        return { ...p, stock: newProductStock };
       }
       return p;
     });
 
     setRawMaterials(updatedMaterials);
     setFinishedProducts(updatedProducts);
+
+    supabaseService.updateFinishedProduct(productId, { stock: newProductStock }).catch(console.error);
 
     const newNotif: ActivityNotification = {
       id: `notif-${Date.now()}`,
@@ -297,6 +463,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       severity: 'success',
     };
     setNotifications((prev) => [newNotif, ...prev]);
+    supabaseService.insertNotification(newNotif).catch(console.error);
 
     return {
       success: true,
@@ -310,33 +477,37 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     const newStock = Number((mat.stock + amount).toFixed(2));
     const newCostPerUnit = amount > 0 && totalCost > 0 ? Math.round(totalCost / amount) : mat.costPerUnit;
+    const today = new Date().toISOString().split('T')[0];
 
     setRawMaterials((prev) =>
-      prev.map((m) => (m.id === materialId ? { ...m, stock: newStock, costPerUnit: newCostPerUnit, updatedAt: new Date().toISOString().split('T')[0] } : m))
+      prev.map((m) => (m.id === materialId ? { ...m, stock: newStock, costPerUnit: newCostPerUnit, updatedAt: today } : m))
     );
+    supabaseService.updateRawMaterial(materialId, { stock: newStock, costPerUnit: newCostPerUnit, updatedAt: today }).catch(console.error);
 
     if (totalCost > 0) {
       const newTrx: Transaction = {
         id: `trx-${Date.now()}`,
-        date: new Date().toISOString().split('T')[0],
+        date: today,
         type: 'expense',
         category: 'Belanja Bahan Baku',
         amount: totalCost,
-        description: `Belanja Restock ${mat.name} (+${amount} ${mat.unit})`,
+        description: `Belanja Restock ${mat.name} (+${amount} ${mat.unit}) [ref:${materialId}]`,
         paymentMethod: 'Tunai',
       };
       setTransactions((prev) => [newTrx, ...prev]);
+      supabaseService.insertTransaction(newTrx).catch(console.error);
     }
 
     const newNotif: ActivityNotification = {
       id: `notif-${Date.now()}`,
       type: 'expense',
       title: `Restock Bahan: ${mat.name}`,
-      message: `Stok bertambah +${amount} ${mat.unit}. Total belanja Rp ${totalCost.toLocaleString('id-ID')}.`,
+      message: `Stok bertambah +${amount} ${mat.unit}. Total belanja ${formatRupiah(totalCost)}.`,
       time: 'Baru saja',
       severity: 'info',
     };
     setNotifications((prev) => [newNotif, ...prev]);
+    supabaseService.insertNotification(newNotif).catch(console.error);
   };
 
   const recordSale = (
@@ -353,71 +524,224 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     const price = customPrice || prod.sellingPrice;
     const totalRevenue = price * qty;
+    const newStock = prod.stock - qty;
 
     setFinishedProducts((prev) =>
-      prev.map((p) => (p.id === productId ? { ...p, stock: p.stock - qty } : p))
+      prev.map((p) => (p.id === productId ? { ...p, stock: newStock } : p))
     );
+    supabaseService.updateFinishedProduct(productId, { stock: newStock }).catch(console.error);
 
+    const today = new Date().toISOString().split('T')[0];
     const newTrx: Transaction = {
       id: `trx-${Date.now()}`,
-      date: new Date().toISOString().split('T')[0],
+      date: today,
       type: 'income',
       category: 'Penjualan Toko',
       amount: totalRevenue,
       description: `Penjualan ${qty} ${prod.unit} ${prod.name}`,
       paymentMethod,
+      quantity: `+${qty} ${prod.unit}`,
     };
     setTransactions((prev) => [newTrx, ...prev]);
+    supabaseService.insertTransaction(newTrx).catch(console.error);
 
     const newNotif: ActivityNotification = {
       id: `notif-${Date.now()}`,
       type: 'sale',
-      title: `Penjualan Kasir: Rp ${totalRevenue.toLocaleString('id-ID')}`,
+      title: `Penjualan Kasir: ${formatRupiah(totalRevenue)}`,
       message: `${qty}x ${prod.name} terjual via ${paymentMethod}.`,
       time: 'Baru saja',
       severity: 'success',
     };
     setNotifications((prev) => [newNotif, ...prev]);
+    supabaseService.insertNotification(newNotif).catch(console.error);
 
     return {
       success: true,
-      message: `Penjualan ${qty} ${prod.unit} berhasil dicatat! Pemasukan +Rp ${totalRevenue.toLocaleString('id-ID')}.`,
+      message: `Penjualan ${qty} ${prod.unit} berhasil dicatat! Pemasukan +${formatRupiah(totalRevenue)}.`,
     };
   };
 
-  const addNewMaterial = (mat: Omit<RawMaterial, 'id' | 'updatedAt'>) => {
-    const newEntry: RawMaterial = {
-      ...mat,
-      id: `mat-${Date.now()}`,
-      updatedAt: new Date().toISOString().split('T')[0],
+  const addNewMaterial = (mat: Omit<RawMaterial, 'id' | 'updatedAt'>, totalPurchaseCost?: number) => {
+    const today = new Date().toISOString().split('T')[0];
+
+    // Cek apakah sudah ada bahan baku untuk kategori ini
+    const existing = rawMaterials.find(
+      (m) =>
+        (mat.categoryId && m.categoryId === mat.categoryId) ||
+        m.category.toLowerCase().trim() === mat.category.toLowerCase().trim()
+    );
+
+    let targetMaterialId = '';
+
+    if (existing) {
+      targetMaterialId = existing.id;
+      // Akumulasikan stok bahan baku yang sudah ada untuk kategori ini
+      const updatedStock = Number((Number(existing.stock) + Number(mat.stock)).toFixed(3));
+      const updated = {
+        ...existing,
+        stock: updatedStock,
+        name: mat.name.trim() || existing.name,
+        updatedAt: today,
+      };
+
+      setRawMaterials((prev) =>
+        prev.map((m) => (m.id === existing.id ? updated : m))
+      );
+      supabaseService.updateRawMaterial(existing.id, {
+        stock: updatedStock,
+        updatedAt: today,
+      }).catch(console.error);
+    } else {
+      // Buat entri baru jika kategori belum memiliki bahan
+      targetMaterialId = `mat-${Date.now()}`;
+      const newEntry: RawMaterial = {
+        ...mat,
+        id: targetMaterialId,
+        updatedAt: today,
+      };
+      setRawMaterials((prev) => [newEntry, ...prev]);
+      supabaseService.insertRawMaterial(newEntry).catch(console.error);
+    }
+
+    // Catat transaksi pengeluaran keuangan otomatis
+    const finalCost =
+      totalPurchaseCost !== undefined && totalPurchaseCost > 0
+        ? totalPurchaseCost
+        : (mat.costPerUnit || 0) * (mat.stock || 0);
+
+    if (finalCost > 0) {
+      const newTrx: Transaction = {
+        id: `trx-${Date.now()}`,
+        date: today,
+        type: 'expense',
+        category: 'Belanja Bahan Baku',
+        amount: finalCost,
+        description: `Belanja Bahan: ${mat.category}${mat.name ? ` (${mat.name})` : ''} (+${mat.stock} ${mat.unit}) [ref:${targetMaterialId}]`,
+        paymentMethod: 'Tunai',
+        quantity: `+${mat.stock} ${mat.unit}`,
+      };
+      setTransactions((prev) => [newTrx, ...prev]);
+      supabaseService.insertTransaction(newTrx).catch(console.error);
+    }
+  };
+
+  const reduceCategoryStock = (
+    categoryId: string,
+    amountKg: number,
+    reason: string
+  ): { success: boolean; message: string } => {
+    const target = rawMaterials.find(
+      (m) => m.categoryId === categoryId || m.category.toLowerCase().trim() === categoryId.toLowerCase().trim()
+    );
+
+    if (!target) {
+      return { success: false, message: 'Kategori bahan baku tidak ditemukan!' };
+    }
+
+    if (target.stock <= 0) {
+      return { success: false, message: `Stok ${target.category} sudah habis (0 ${target.unit}).` };
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const newStock = Math.max(0, Number((target.stock - amountKg).toFixed(3)));
+
+    setRawMaterials((prev) =>
+      prev.map((m) => (m.id === target.id ? { ...m, stock: newStock, updatedAt: today } : m))
+    );
+    supabaseService.updateRawMaterial(target.id, { stock: newStock, updatedAt: today }).catch(console.error);
+
+    const newNotif: ActivityNotification = {
+      id: `notif-${Date.now()}`,
+      type: 'expense',
+      title: `Pengurangan Stok: ${target.category}`,
+      message: `Dipangkas -${amountKg} ${target.unit}. Sisa: ${newStock} ${target.unit}. Alasan: ${reason || 'Dipakai Dapur'}.`,
+      time: 'Baru saja',
+      severity: newStock <= target.minStock ? 'warning' : 'info',
     };
-    setRawMaterials((prev) => [newEntry, ...prev]);
+    setNotifications((prev) => [newNotif, ...prev]);
+    supabaseService.insertNotification(newNotif).catch(console.error);
+
+    return {
+      success: true,
+      message: `Stok ${target.category} berhasil dikurangi ${amountKg} ${target.unit}. Tersisa ${newStock} ${target.unit}.`,
+    };
   };
 
   const updateMaterial = (id: string, updated: Partial<RawMaterial>) => {
+    const updatedWithDate = {
+      ...updated,
+      updatedAt: new Date().toISOString().split('T')[0],
+    };
     setRawMaterials((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, ...updated, updatedAt: new Date().toISOString().split('T')[0] } : m))
+      prev.map((m) => (m.id === id ? { ...m, ...updatedWithDate } : m))
     );
+    supabaseService.updateRawMaterial(id, updatedWithDate).catch(console.error);
   };
 
   const deleteMaterial = (id: string) => {
     setRawMaterials((prev) => prev.filter((m) => m.id !== id));
+    supabaseService.deleteRawMaterial(id).catch(console.error);
+  };
+
+  const deleteMaterialWithSync = async (
+    materialId: string,
+    syncFinance: boolean = true
+  ): Promise<{ success: boolean; message: string; affectedTrxCount: number }> => {
+    const mat = rawMaterials.find((m) => m.id === materialId);
+    if (!mat) return { success: false, message: 'Bahan baku tidak ditemukan!', affectedTrxCount: 0 };
+
+    setRawMaterials((prev) => prev.filter((m) => m.id !== materialId));
+    await supabaseService.deleteRawMaterial(materialId).catch(console.error);
+
+    let affectedTrxCount = 0;
+    if (syncFinance) {
+      const relatedTrxs = transactions.filter((t) => {
+        if (t.type !== 'expense') return false;
+        const refId = extractTrxMaterialRef(t.description);
+        if (refId && refId === materialId) return true;
+        return (
+          t.category === 'Belanja Bahan Baku' &&
+          (t.description.toLowerCase().includes(mat.category.toLowerCase()) ||
+            (mat.name && t.description.toLowerCase().includes(mat.name.toLowerCase())))
+        );
+      });
+
+      affectedTrxCount = relatedTrxs.length;
+      if (relatedTrxs.length > 0) {
+        const relatedIds = new Set(relatedTrxs.map((t) => t.id));
+        setTransactions((prev) => prev.filter((t) => !relatedIds.has(t.id)));
+        await Promise.all(relatedTrxs.map((t) => supabaseService.deleteTransaction(t.id))).catch(console.error);
+      }
+    }
+
+    return {
+      success: true,
+      message:
+        affectedTrxCount > 0
+          ? `Bahan ${mat.category} dihapus & ${affectedTrxCount} catatan belanja terkait telah dibersihkan dari buku kas.`
+          : `Bahan ${mat.category} berhasil dihapus.`,
+      affectedTrxCount,
+    };
   };
 
   const quickAdjustMaterialStock = (id: string, delta: number) => {
+    const today = new Date().toISOString().split('T')[0];
+    let newStockVal = 0;
     setRawMaterials((prev) =>
       prev.map((m) => {
         if (m.id === id) {
-          const newStock = Math.max(0, Number((m.stock + delta).toFixed(2)));
+          newStockVal = Math.max(0, Number((m.stock + delta).toFixed(2)));
           return {
             ...m,
-            stock: newStock,
-            updatedAt: new Date().toISOString().split('T')[0],
+            stock: newStockVal,
+            updatedAt: today,
           };
         }
         return m;
       })
     );
+    supabaseService.updateRawMaterial(id, { stock: newStockVal, updatedAt: today }).catch(console.error);
   };
 
   const addNewProduct = (prod: Omit<FinishedProduct, 'id'>) => {
@@ -426,28 +750,33 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       id: `prod-${Date.now()}`,
     };
     setFinishedProducts((prev) => [newEntry, ...prev]);
+    supabaseService.insertFinishedProduct(newEntry).catch(console.error);
   };
 
   const updateProduct = (id: string, updated: Partial<FinishedProduct>) => {
     setFinishedProducts((prev) =>
       prev.map((p) => (p.id === id ? { ...p, ...updated } : p))
     );
+    supabaseService.updateFinishedProduct(id, updated).catch(console.error);
   };
 
   const deleteProduct = (id: string) => {
     setFinishedProducts((prev) => prev.filter((p) => p.id !== id));
+    supabaseService.deleteFinishedProduct(id).catch(console.error);
   };
 
   const quickAdjustProductStock = (id: string, delta: number) => {
+    let newStockVal = 0;
     setFinishedProducts((prev) =>
       prev.map((p) => {
         if (p.id === id) {
-          const newStock = Math.max(0, p.stock + delta);
-          return { ...p, stock: newStock };
+          newStockVal = Math.max(0, p.stock + delta);
+          return { ...p, stock: newStockVal };
         }
         return p;
       })
     );
+    supabaseService.updateFinishedProduct(id, { stock: newStockVal }).catch(console.error);
   };
 
   const addTransaction = (trx: Omit<Transaction, 'id'>) => {
@@ -456,14 +785,69 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       id: `trx-${Date.now()}`,
     };
     setTransactions((prev) => [newEntry, ...prev]);
+    supabaseService.insertTransaction(newEntry).catch(console.error);
   };
 
   const deleteTransaction = (id: string) => {
     setTransactions((prev) => prev.filter((t) => t.id !== id));
+    supabaseService.deleteTransaction(id).catch(console.error);
+  };
+
+  const deleteTransactionWithSync = async (
+    id: string,
+    syncStock: boolean = true
+  ): Promise<{ success: boolean; message: string; affectedMaterialName?: string }> => {
+    const targetTrx = transactions.find((t) => t.id === id);
+    if (!targetTrx) return { success: false, message: 'Transaksi tidak ditemukan!' };
+
+    setTransactions((prev) => prev.filter((t) => t.id !== id));
+    await supabaseService.deleteTransaction(id).catch(console.error);
+
+    let affectedMaterialName: string | undefined;
+
+    if (syncStock && targetTrx.type === 'expense') {
+      const refId = extractTrxMaterialRef(targetTrx.description);
+      const matchedMaterial = refId
+        ? rawMaterials.find((m) => m.id === refId)
+        : rawMaterials.find(
+            (m) =>
+              targetTrx.description.toLowerCase().includes(m.category.toLowerCase()) ||
+              (m.name && targetTrx.description.toLowerCase().includes(m.name.toLowerCase()))
+          );
+
+      if (matchedMaterial) {
+        affectedMaterialName = matchedMaterial.category || matchedMaterial.name;
+        const qtyMatch = targetTrx.description.match(/\+(\d+(?:\.\d+)?)\s*(?:kg|gr|butir|liter|ml|pack|pcs)/i);
+        const addedQty = qtyMatch ? parseFloat(qtyMatch[1]) : 0;
+
+        if (addedQty > 0 && matchedMaterial.stock > addedQty) {
+          const newStock = Number((matchedMaterial.stock - addedQty).toFixed(3));
+          setRawMaterials((prev) =>
+            prev.map((m) => (m.id === matchedMaterial.id ? { ...m, stock: newStock } : m))
+          );
+          await supabaseService.updateRawMaterial(matchedMaterial.id, { stock: newStock }).catch(console.error);
+        } else {
+          const newStock = Math.max(0, Number((matchedMaterial.stock - (addedQty || matchedMaterial.stock)).toFixed(3)));
+          setRawMaterials((prev) =>
+            prev.map((m) => (m.id === matchedMaterial.id ? { ...m, stock: newStock } : m))
+          );
+          await supabaseService.updateRawMaterial(matchedMaterial.id, { stock: newStock }).catch(console.error);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      message: affectedMaterialName
+        ? `Transaksi belanja dihapus & stok ${affectedMaterialName} telah disinkronkan otomatis.`
+        : 'Transaksi berhasil dihapus.',
+      affectedMaterialName,
+    };
   };
 
   const markNotificationRead = (id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
+    supabaseService.deleteNotification(id).catch(console.error);
   };
 
   const totalIncome = transactions
@@ -501,6 +885,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         transactions,
         notifications,
         summary,
+        supabaseStatus,
+        isSupabaseLoading,
+        syncWithSupabase,
+        seedSupabaseDatabase,
         addCategory,
         updateCategory,
         deleteCategory,
@@ -508,8 +896,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         addRawMaterialStock,
         recordSale,
         addNewMaterial,
+        reduceCategoryStock,
         updateMaterial,
         deleteMaterial,
+        deleteMaterialWithSync,
         quickAdjustMaterialStock,
         addNewProduct,
         updateProduct,
@@ -517,8 +907,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         quickAdjustProductStock,
         addTransaction,
         deleteTransaction,
+        deleteTransactionWithSync,
         markNotificationRead,
         resetAllData,
+        clearStockData,
+        clearTransactionData,
+        clearEntireDatabase,
       }}
     >
       {children}

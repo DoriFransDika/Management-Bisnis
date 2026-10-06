@@ -10,7 +10,7 @@ import {
 import { motion } from 'framer-motion';
 import { useStore } from '@/lib/store';
 
-export function NotificationPanel({ onOpenQuickBake }: { onOpenQuickBake?: () => void }) {
+export function NotificationPanel() {
   const { rawMaterials, finishedProducts, notifications } = useStore();
 
   const lowMaterials = rawMaterials.filter((m) => m.stock <= m.minStock);
@@ -86,14 +86,9 @@ export function NotificationPanel({ onOpenQuickBake }: { onOpenQuickBake?: () =>
                       Sisa {prod.stock} {prod.unit}
                     </p>
                   </div>
-                  {onOpenQuickBake && (
-                    <button
-                      onClick={onOpenQuickBake}
-                      className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl bg-[#FFB300] text-[#3E2723] text-[10px] sm:text-[11px] font-black hover:bg-[#FFA000] active:scale-95 transition-all shadow-xs shrink-0"
-                    >
-                      Bake
-                    </button>
-                  )}
+                  <span className="text-xs font-black text-[#E65100]">
+                    {prod.stock} {prod.unit}
+                  </span>
                 </div>
               ))}
             </div>

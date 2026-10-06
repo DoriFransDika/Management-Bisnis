@@ -14,15 +14,18 @@ import {
   Layers,
   Heart,
   Search,
-  X
+  X,
+  Scale,
+  Droplets,
+  Package
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { Sidebar } from '@/components/navigation/Sidebar';
 import { BottomNav } from '@/components/navigation/BottomNav';
 import { Header } from '@/components/navigation/Header';
-import { QuickBakeModal } from '@/components/dashboard/QuickBakeModal';
 import { CategoryIcon, AVAILABLE_CATEGORY_ICONS, CATEGORY_COLOR_PRESETS } from '@/components/common/CategoryIcon';
-import { Category } from '@/types';
+import { Category, UnitGroup } from '@/types';
+import { getCategoryUnitGroup, cleanCategoryDescription } from '@/lib/utils';
 
 export default function CategoryManagerPage() {
   const {
@@ -36,13 +39,13 @@ export default function CategoryManagerPage() {
 
   const [activeTab, setActiveTab] = useState<'material' | 'product'>('material');
   const [searchQuery, setSearchQuery] = useState('');
-  const [isBakeOpen, setIsBakeOpen] = useState(false);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [name, setName] = useState('');
   const [type, setType] = useState<'material' | 'product'>('material');
+  const [unitGroup, setUnitGroup] = useState<UnitGroup>('weight');
   const [iconName, setIconName] = useState('Wheat');
   const [selectedColorPreset, setSelectedColorPreset] = useState(CATEGORY_COLOR_PRESETS[0]);
   const [description, setDescription] = useState('');
@@ -52,6 +55,7 @@ export default function CategoryManagerPage() {
     setEditingCategory(null);
     setName('');
     setType(activeTab);
+    setUnitGroup('weight');
     setIconName(activeTab === 'material' ? 'Wheat' : 'Croissant');
     setSelectedColorPreset(CATEGORY_COLOR_PRESETS[0]);
     setDescription('');
@@ -63,10 +67,11 @@ export default function CategoryManagerPage() {
     setEditingCategory(cat);
     setName(cat.name);
     setType(cat.type);
+    setUnitGroup(getCategoryUnitGroup(cat));
     setIconName(cat.iconName);
     const foundPreset = CATEGORY_COLOR_PRESETS.find((p) => p.bg === cat.bgColor) || CATEGORY_COLOR_PRESETS[0];
     setSelectedColorPreset(foundPreset);
-    setDescription(cat.description || '');
+    setDescription(cleanCategoryDescription(cat.description) || '');
     setAlertMsg(null);
     setIsModalOpen(true);
   };
@@ -75,24 +80,29 @@ export default function CategoryManagerPage() {
     e.preventDefault();
     if (!name.trim()) return;
 
+    const cleanDesc = cleanCategoryDescription(description);
+    const finalDesc = type === 'material' ? `${cleanDesc} [unit:${unitGroup}]`.trim() : cleanDesc;
+
     if (editingCategory) {
       updateCategory(editingCategory.id, {
         name: name.trim(),
         type,
+        unitGroup: type === 'material' ? unitGroup : undefined,
         iconName,
         bgColor: selectedColorPreset.bg,
         textColor: selectedColorPreset.text,
-        description: description.trim(),
+        description: finalDesc,
       });
       setAlertMsg({ success: true, text: 'Kategori berhasil diperbarui!' });
     } else {
       addCategory({
         name: name.trim(),
         type,
+        unitGroup: type === 'material' ? unitGroup : undefined,
         iconName,
         bgColor: selectedColorPreset.bg,
         textColor: selectedColorPreset.text,
-        description: description.trim(),
+        description: finalDesc,
       });
       setAlertMsg({ success: true, text: 'Kategori baru berhasil ditambahkan!' });
     }
@@ -123,7 +133,7 @@ export default function CategoryManagerPage() {
       <Sidebar />
 
       <div className="flex-1 flex flex-col min-w-0 pb-28 md:pb-12">
-        <Header onOpenQuickBake={() => setIsBakeOpen(true)} />
+        <Header />
 
         <main className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full mx-auto">
           {/* Header Banner */}
@@ -236,6 +246,15 @@ export default function CategoryManagerPage() {
                     <p className="text-[10px] text-[#8D6E63] font-medium mt-0.5">
                       {count} {cat.type === 'material' ? 'bahan' : 'roti'}
                     </p>
+                    {cat.type === 'material' && (
+                      <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-[#FFF3E0] text-[#E65100] border border-[#FFE0B2]">
+                        {getCategoryUnitGroup(cat) === 'weight'
+                          ? 'Berat (gram/kg)'
+                          : getCategoryUnitGroup(cat) === 'volume'
+                          ? 'Volume (Liter/ml)'
+                          : 'Unit (pcs/kaleng)'}
+                      </span>
+                    )}
                   </div>
                 </div>
               );
@@ -245,7 +264,6 @@ export default function CategoryManagerPage() {
       </div>
 
       <BottomNav />
-      <QuickBakeModal isOpen={isBakeOpen} onClose={() => setIsBakeOpen(false)} />
 
       {/* CREATE / EDIT CATEGORY MODAL */}
       {isModalOpen && (
@@ -308,10 +326,74 @@ export default function CategoryManagerPage() {
                         : 'bg-white border-[#EFE4DA] text-[#8D6E63]'
                     }`}
                   >
-                    Produk Roti Jadi
+                    Produk Roti
                   </button>
                 </div>
               </div>
+
+              {/* Jenis Satuan Kategori (Khusus Bahan Baku) */}
+              {type === 'material' && (
+                <div>
+                  <label className="block text-xs font-black uppercase text-[#6D4C41] mb-1.5">
+                    Jenis Satuan Kategori <span className="text-amber-700 font-normal lowercase">(basis satuan persediaan)</span>
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setUnitGroup('weight')}
+                      className={`p-2.5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
+                        unitGroup === 'weight'
+                          ? 'bg-[#FFF3E0] border-[#FFB300] ring-2 ring-[#FFB300] text-[#3E2723] shadow-xs'
+                          : 'bg-white border-[#EFE4DA] text-[#6D4C41] hover:bg-[#FFFDF9]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-black text-xs">
+                        <Scale className="w-3.5 h-3.5 text-[#E65100]" />
+                        <span>Berat</span>
+                      </div>
+                      <span className="text-[9.5px] text-[#8D6E63] mt-1 font-medium leading-tight">
+                        Default basis: gram / kg
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setUnitGroup('volume')}
+                      className={`p-2.5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
+                        unitGroup === 'volume'
+                          ? 'bg-[#FFF3E0] border-[#FFB300] ring-2 ring-[#FFB300] text-[#3E2723] shadow-xs'
+                          : 'bg-white border-[#EFE4DA] text-[#6D4C41] hover:bg-[#FFFDF9]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-black text-xs">
+                        <Droplets className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Volume</span>
+                      </div>
+                      <span className="text-[9.5px] text-[#8D6E63] mt-1 font-medium leading-tight">
+                        Default basis: Liter / ml
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setUnitGroup('count')}
+                      className={`p-2.5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
+                        unitGroup === 'count'
+                          ? 'bg-[#FFF3E0] border-[#FFB300] ring-2 ring-[#FFB300] text-[#3E2723] shadow-xs'
+                          : 'bg-white border-[#EFE4DA] text-[#6D4C41] hover:bg-[#FFFDF9]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-black text-xs">
+                        <Package className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Unit / Hitung</span>
+                      </div>
+                      <span className="text-[9.5px] text-[#8D6E63] mt-1 font-medium leading-tight">
+                        Default basis: pcs / kaleng / botol / kotak
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Category Name */}
               <div>
@@ -355,12 +437,12 @@ export default function CategoryManagerPage() {
                 </div>
               </div>
 
-              {/* Color Preset Picker */}
+              {/* Color Preset Picker (E-Wallet Style Pastel Circles) */}
               <div>
                 <label className="block text-xs font-black uppercase text-[#6D4C41] mb-1.5">
-                  Warna Latar Pastel (Gaya E-Wallet)
+                  Warna Latar Pastel (Gaya Dompet Digital)
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-6 gap-2 p-2 bg-white rounded-2xl border border-[#EFE4DA]">
                   {CATEGORY_COLOR_PRESETS.map((preset) => {
                     const isSelected = selectedColorPreset.id === preset.id;
                     return (
@@ -368,12 +450,14 @@ export default function CategoryManagerPage() {
                         key={preset.id}
                         type="button"
                         onClick={() => setSelectedColorPreset(preset)}
-                        className={`p-2.5 rounded-xl border flex items-center gap-2 text-xs font-black transition-all ${preset.bg} ${preset.text} ${
-                          isSelected ? 'ring-2 ring-[#FFB300] border-transparent' : 'border-[#EFE4DA]'
+                        className={`h-8 rounded-xl flex items-center justify-center transition-all ${preset.bg} ${
+                          isSelected
+                            ? 'ring-2 ring-offset-1 ring-[#3E2723] scale-105 shadow-xs border border-white'
+                            : 'border border-black/5 hover:scale-105'
                         }`}
+                        title={preset.id}
                       >
-                        <span className="w-3 h-3 rounded-full bg-current" />
-                        <span className="truncate">{preset.name}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-[#3E2723] stroke-[3]" />}
                       </button>
                     );
                   })}

@@ -39,12 +39,18 @@ export const AVAILABLE_CATEGORY_ICONS = [
 ];
 
 export const CATEGORY_COLOR_PRESETS = [
-  { id: 'pink', name: 'Dusty Pink', bg: 'bg-rose-100', text: 'text-rose-600', border: 'border-rose-200' },
-  { id: 'peach', name: 'Peach Pastel', bg: 'bg-orange-100', text: 'text-orange-600', border: 'border-orange-200' },
-  { id: 'cream', name: 'Krem Madu', bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
-  { id: 'matcha', name: 'Matcha / Mint', bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
-  { id: 'taro', name: 'Taro / Lilac', bg: 'bg-purple-100', text: 'text-purple-600', border: 'border-purple-200' },
-  { id: 'chocolate', name: 'Cokelat Hangat', bg: 'bg-stone-200', text: 'text-[#4A3B32]', border: 'border-stone-300' },
+  { id: 'peach', hex: '#FFE0B2', bg: 'bg-[#FFE0B2]', text: 'text-[#E65100]', border: 'border-[#FFCC80]' },
+  { id: 'honey', hex: '#FFECB3', bg: 'bg-[#FFECB3]', text: 'text-[#F57F17]', border: 'border-[#FFE082]' },
+  { id: 'cream', hex: '#FFF9C4', bg: 'bg-[#FFF9C4]', text: 'text-[#F57F17]', border: 'border-[#FFF59D]' },
+  { id: 'mint', hex: '#C8E6C9', bg: 'bg-[#C8E6C9]', text: 'text-[#2E7D32]', border: 'border-[#A5D6A7]' },
+  { id: 'teal', hex: '#B2DFDB', bg: 'bg-[#B2DFDB]', text: 'text-[#00695C]', border: 'border-[#80CBC4]' },
+  { id: 'sky', hex: '#B3E5FC', bg: 'bg-[#B3E5FC]', text: 'text-[#0277BD]', border: 'border-[#81D4FA]' },
+  { id: 'lavender', hex: '#D1C4E9', bg: 'bg-[#D1C4E9]', text: 'text-[#512DA8]', border: 'border-[#B39DDB]' },
+  { id: 'taro', hex: '#E1BEE7', bg: 'bg-[#E1BEE7]', text: 'text-[#8E24AA]', border: 'border-[#CE93D8]' },
+  { id: 'rose', hex: '#F8BBD0', bg: 'bg-[#F8BBD0]', text: 'text-[#C2185B]', border: 'border-[#F48FB1]' },
+  { id: 'coral', hex: '#FFCCBC', bg: 'bg-[#FFCCBC]', text: 'text-[#D84315]', border: 'border-[#FFAB91]' },
+  { id: 'sand', hex: '#D7CCC8', bg: 'bg-[#D7CCC8]', text: 'text-[#4E342E]', border: 'border-[#BCAAA4]' },
+  { id: 'mocha', hex: '#CFD8DC', bg: 'bg-[#CFD8DC]', text: 'text-[#37474F]', border: 'border-[#B0BEC5]' },
 ];
 
 export function CategoryIcon({
