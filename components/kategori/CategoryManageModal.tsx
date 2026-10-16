@@ -4,7 +4,12 @@ import React, { useState } from 'react';
 import { Tags, Plus, Edit2, Trash2, X, Check, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/lib/store';
-import { CategoryIcon, AVAILABLE_CATEGORY_ICONS, CATEGORY_COLOR_PRESETS } from '@/components/common/CategoryIcon';
+import {
+  CategoryIcon,
+  MATERIAL_CATEGORY_ICONS,
+  PRODUCT_CATEGORY_ICONS,
+  CATEGORY_COLOR_PRESETS
+} from '@/components/common/CategoryIcon';
 import { Category, UnitGroup } from '@/types';
 import { getCategoryUnitGroup, cleanCategoryDescription, UNIT_GROUP_CONFIG } from '@/lib/utils';
 import { Scale, Droplets, Package } from 'lucide-react';
@@ -207,7 +212,12 @@ export function CategoryManageModal({
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setType('material')}
+                    onClick={() => {
+                      setType('material');
+                      if (!MATERIAL_CATEGORY_ICONS.some((i) => i.name.toLowerCase() === iconName.toLowerCase())) {
+                        setIconName('Wheat');
+                      }
+                    }}
                     className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
                       type === 'material'
                         ? 'bg-[#FFF3E0] border-[#FFB300] text-[#3E2723] shadow-2xs font-black'
@@ -218,7 +228,12 @@ export function CategoryManageModal({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setType('product')}
+                    onClick={() => {
+                      setType('product');
+                      if (!PRODUCT_CATEGORY_ICONS.some((i) => i.name.toLowerCase() === iconName.toLowerCase())) {
+                        setIconName('Croissant');
+                      }
+                    }}
                     className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
                       type === 'product'
                         ? 'bg-[#FFF3E0] border-[#FFB300] text-[#3E2723] shadow-2xs font-black'
@@ -306,11 +321,13 @@ export function CategoryManageModal({
                 />
               </div>
 
-              {/* Icon Selector */}
+              {/* Icon Selector (Khusus Bahan Baku atau Khusus Produk) */}
               <div>
-                <label className="block text-[11px] font-bold text-[#3E2723] mb-1">Pilih Ikon Visual</label>
+                <label className="block text-[11px] font-bold text-[#3E2723] mb-1">
+                  Pilih Ikon Visual {type === 'material' ? '(Bahan Baku)' : '(Produk Jadi)'}
+                </label>
                 <div className="grid grid-cols-7 gap-1.5 max-h-24 overflow-y-auto p-1.5 bg-[#FAF7F2] rounded-xl border border-[#EFE4DA]">
-                  {AVAILABLE_CATEGORY_ICONS.map((iconItem) => {
+                  {(type === 'material' ? MATERIAL_CATEGORY_ICONS : PRODUCT_CATEGORY_ICONS).map((iconItem) => {
                     const isSelected = iconName.toLowerCase() === iconItem.name.toLowerCase();
                     const IconComp = iconItem.icon;
                     return (

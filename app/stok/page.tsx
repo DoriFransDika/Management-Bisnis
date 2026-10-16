@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import {
   Boxes,
+  Sparkles,
   Plus,
   AlertTriangle,
   Search,
@@ -12,6 +13,9 @@ import {
   Trash2,
   X,
   Check,
+  Eye,
+  Filter,
+  PackageX,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/lib/store';
@@ -20,23 +24,38 @@ import { BottomNav } from '@/components/navigation/BottomNav';
 import { Header } from '@/components/navigation/Header';
 import { ItemModal } from '@/components/stok/ItemModal';
 import { ReduceStockModal } from '@/components/stok/ReduceStockModal';
+import { CategoryDetailModal } from '@/components/stok/CategoryDetailModal';
+import { MaterialList } from '@/components/stok/MaterialList';
+import {
+  ReadyProductList,
+  ReadyStatusFilter,
+  matchesReadyStatus,
+  getReadyProductStatus,
+} from '@/components/stok/ReadyProductList';
 import { CategoryIcon } from '@/components/common/CategoryIcon';
 import { CategoryManageModal } from '@/components/kategori/CategoryManageModal';
 import { DeleteDatabaseModal } from '@/components/common/DeleteDatabaseModal';
 import { ConfirmSyncDeleteModal } from '@/components/common/ConfirmSyncDeleteModal';
 import { getCategoryDisplayUnit } from '@/lib/utils';
-import { RawMaterial } from '@/types';
+import { RawMaterial, FinishedProduct, Category } from '@/types';
 
 export default function StockPage() {
   const {
     rawMaterials,
+    finishedProducts,
     categories,
     deleteMaterialWithSync,
+    deleteProduct,
     clearStockData,
   } = useStore();
 
+  // Tab: 'materials' (Bahan Baku Dapur) vs 'products' (Stok Produk Ready)
+  const [activeTab, setActiveTab] = useState<'materials' | 'products'>('materials');
+
+  // Filter Kategori (Dropdown)
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
   const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'low' | 'safe'>('all');
+  const [readyStatusFilter, setReadyStatusFilter] = useState<ReadyStatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modals
@@ -44,10 +63,28 @@ export default function StockPage() {
   const [isCatManageOpen, setIsCatManageOpen] = useState(false);
   const [isClearStockOpen, setIsClearStockOpen] = useState(false);
   const [isReduceOpen, setIsReduceOpen] = useState(false);
-  const [reduceCategoryTarget, setReduceCategoryTarget] = useState<{ id?: string; name?: string } | null>(null);
-  const [itemToEdit, setItemToEdit] = useState<RawMaterial | null>(null);
+  const [reduceCategoryTarget, setReduceCategoryTarget] = useState<{
+    id?: string;
+    name?: string;
+    materialId?: string;
+    materialName?: string;
+  } | null>(null);
+  const [itemToEdit, setItemToEdit] = useState<RawMaterial | FinishedProduct | null>(null);
   const [materialToDeleteSync, setMaterialToDeleteSync] = useState<{ id: string; name: string } | null>(null);
   const [isDeletingSync, setIsDeletingSync] = useState(false);
+
+  // Modal Lihat Detail Kategori
+  const [detailModalState, setDetailModalState] = useState<{
+    isOpen: boolean;
+    category: Category | null;
+    items: (RawMaterial | FinishedProduct)[];
+    type: 'material' | 'product';
+  }>({
+    isOpen: false,
+    category: null,
+    items: [],
+    type: 'material',
+  });
 
   // Toast feedback state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -59,38 +96,104 @@ export default function StockPage() {
     }, 3000);
   };
 
-  // Akumulasi Stok Per Kategori Bahan Baku (Bahan Baku Dapur Eksklusif)
-  const materialCategories = categories.filter((c) => c.type === 'material');
-  const categoryStockList = materialCategories
-    .map((cat) => {
-      const matsInCat = rawMaterials.filter(
-        (m) => m.categoryId === cat.id || m.category.toLowerCase().trim() === cat.name.toLowerCase().trim()
-      );
-      const totalStock = matsInCat.reduce((sum, m) => sum + Number(m.stock || 0), 0);
-      const minStock = matsInCat.length > 0 ? Math.min(...matsInCat.map((m) => m.minStock)) : 3;
-      const isLow = totalStock <= minStock;
-      const unit = getCategoryDisplayUnit(cat, matsInCat[0]?.unit);
+  // Kategori aktif sesuai tab
+  const currentCategories = categories.filter((c) =>
+    activeTab === 'materials' ? c.type === 'material' : c.type === 'product'
+  );
 
-      return {
-        cat,
-        totalStock: Number(totalStock.toFixed(2)),
-        unit,
-        minStock,
-        isLow,
-        itemCount: matsInCat.length,
-      };
-    })
-    .filter((item) => {
-      const matchesSearch = item.cat.name.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCat = selectedCategoryId === 'all' || item.cat.id === selectedCategoryId;
-      const matchesStatus =
-        stockStatusFilter === 'all' ? true : stockStatusFilter === 'low' ? item.isLow : !item.isLow;
-      return matchesSearch && matchesCat && matchesStatus;
-    });
+  // 1. Daftar Bahan Baku Dapur: Tampil langsung per merek/varian dengan label kategori di atasnya
+  const filteredMaterialsList = React.useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return rawMaterials
+      .filter((m) => {
+        const matchesCat =
+          selectedCategoryId === 'all' ||
+          m.categoryId === selectedCategoryId ||
+          m.category.toLowerCase().trim() ===
+            categories.find((c) => c.id === selectedCategoryId)?.name.toLowerCase().trim();
+
+        const matchesSearch =
+          !q || m.name.toLowerCase().includes(q) || m.category.toLowerCase().includes(q);
+
+        const isLow = m.stock <= m.minStock;
+        const matchesStatus =
+          stockStatusFilter === 'all'
+            ? true
+            : stockStatusFilter === 'low'
+            ? isLow
+            : !isLow;
+
+        return matchesCat && matchesSearch && matchesStatus;
+      })
+      .sort((a, b) => {
+        // Habis/kritis paling atas, lalu alfabetis
+        const aLow = a.stock <= a.minStock ? 0 : 1;
+        const bLow = b.stock <= b.minStock ? 0 : 1;
+        if (aLow !== bLow) return aLow - bLow;
+        return a.name.localeCompare(b.name);
+      });
+  }, [rawMaterials, selectedCategoryId, categories, searchQuery, stockStatusFilter]);
+
+  const materialCounts = React.useMemo(() => {
+    const inCat = rawMaterials.filter(
+      (m) =>
+        selectedCategoryId === 'all' ||
+        m.categoryId === selectedCategoryId ||
+        m.category.toLowerCase().trim() ===
+          categories.find((c) => c.id === selectedCategoryId)?.name.toLowerCase().trim()
+    );
+    return {
+      all: inCat.length,
+      low: inCat.filter((m) => m.stock <= m.minStock).length,
+      safe: inCat.filter((m) => m.stock > m.minStock).length,
+    };
+  }, [rawMaterials, selectedCategoryId, categories]);
 
   const handleOpenAdd = () => {
     setItemToEdit(null);
     setIsItemModalOpen(true);
+  };
+
+  // 3. Daftar Produk Ready (langsung tampil per produk, difilter kategori + status + pencarian)
+  const readyProductsList = React.useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return finishedProducts
+      .filter((p) => {
+        const matchesCat = selectedCategoryId === 'all' || p.categoryId === selectedCategoryId;
+        const matchesSearch =
+          !q || p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q);
+        return matchesCat && matchesSearch && matchesReadyStatus(p, readyStatusFilter);
+      })
+      .sort((a, b) => {
+        // Habis paling atas, lalu hampir habis, lalu tersedia
+        const rank = { out: 0, low: 1, safe: 2 } as const;
+        const diff = rank[getReadyProductStatus(a)] - rank[getReadyProductStatus(b)];
+        return diff !== 0 ? diff : a.name.localeCompare(b.name);
+      });
+  }, [finishedProducts, selectedCategoryId, searchQuery, readyStatusFilter]);
+
+  const readyCounts = React.useMemo(() => {
+    const inCat = finishedProducts.filter(
+      (p) => selectedCategoryId === 'all' || p.categoryId === selectedCategoryId
+    );
+    return {
+      all: inCat.length,
+      available: inCat.filter((p) => matchesReadyStatus(p, 'available')).length,
+      low: inCat.filter((p) => matchesReadyStatus(p, 'low')).length,
+      out: inCat.filter((p) => matchesReadyStatus(p, 'out')).length,
+    };
+  }, [finishedProducts, selectedCategoryId]);
+
+  const handleOpenEditProduct = (p: FinishedProduct) => {
+    setItemToEdit(p);
+    setIsItemModalOpen(true);
+  };
+
+  const handleDeleteProduct = (p: FinishedProduct) => {
+    if (confirm(`Hapus produk "${p.name}" (${p.stock} pcs) dari Manajemen Stok?`)) {
+      deleteProduct(p.id);
+      showToast(`Produk ${p.name} dihapus.`);
+    }
   };
 
   const handleOpenReduceUniversal = () => {
@@ -101,6 +204,15 @@ export default function StockPage() {
   const handleOpenReduceCategory = (categoryId: string, categoryName: string) => {
     setReduceCategoryTarget({ id: categoryId, name: categoryName });
     setIsReduceOpen(true);
+  };
+
+  const handleOpenDetailModal = (cat: Category, items: (RawMaterial | FinishedProduct)[]) => {
+    setDetailModalState({
+      isOpen: true,
+      category: cat,
+      items,
+      type: activeTab === 'materials' ? 'material' : 'product',
+    });
   };
 
   const handleConfirmDeleteMaterialSync = async () => {
@@ -140,250 +252,269 @@ export default function StockPage() {
         </AnimatePresence>
 
         <main className="p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 max-w-7xl w-full mx-auto">
-          {/* Top Title & Actions */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 p-4 sm:p-7 rounded-2xl sm:rounded-3xl bg-white/92 backdrop-blur-md border-1.5 sm:border-2 border-[#EFE4DA] shadow-sm sm:shadow-lg shadow-[#3E2723]/5">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="p-1.5 sm:p-2 rounded-xl sm:rounded-2xl bg-[#FFF3E0] text-[#3E2723] border border-[#FFE0B2]">
-                  <Boxes className="w-4 h-4 sm:w-5 sm:h-5 text-[#FFB300]" />
-                </span>
-                <h2 className="text-base sm:text-2xl font-black text-[#3E2723] tracking-tight">
-                  Manajemen Stok Bahan Baku
-                </h2>
+          {/* Top Title & Tab Switcher */}
+          <div className="p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white/92 backdrop-blur-md border-1.5 sm:border-2 border-[#EFE4DA] shadow-sm sm:shadow-lg shadow-[#3E2723]/5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 sm:p-2 rounded-xl sm:rounded-2xl bg-[#FFF3E0] text-[#3E2723] border border-[#FFE0B2]">
+                    {activeTab === 'materials' ? (
+                      <Boxes className="w-4 h-4 sm:w-5 sm:h-5 text-[#FFB300]" />
+                    ) : (
+                      <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#2E7D32]" />
+                    )}
+                  </span>
+                  <h2 className="text-base sm:text-2xl font-black text-[#3E2723] tracking-tight">
+                    {activeTab === 'materials' ? 'Manajemen Bahan Baku Dapur' : 'Manajemen Stok Produk Ready'}
+                  </h2>
+                </div>
+                <p className="text-[11px] sm:text-xs text-[#8D6E63] mt-1 font-medium">
+                  {activeTab === 'materials'
+                    ? 'Pencatatan persediaan bahan baku dapur per kategori otomatis menyesuaikan satuan.'
+                    : 'Input stok produk ready (pcs). Stok berkurang otomatis saat transaksi penjualan di Keuangan Toko.'}
+                </p>
               </div>
-              <p className="text-[11px] sm:text-xs text-[#8D6E63] mt-1 font-medium">
-                Pencatatan persediaan bahan baku dapur per kategori otomatis menyesuaikan satuan.
-              </p>
+
+              {/* Actions */}
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={handleOpenAdd}
+                  className="justify-center px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#FFB300] to-[#FFA000] hover:brightness-105 text-[#3E2723] text-[11px] sm:text-xs font-black flex items-center gap-1.5 shadow-md shadow-[#FFB300]/25 active:scale-95 transition-all"
+                >
+                  <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[3]" />
+                  <span className="truncate">
+                    {activeTab === 'materials' ? 'Tambah Bahan' : 'Input Produk Ready'}
+                  </span>
+                </button>
+
+                {activeTab === 'materials' && (
+                  <button
+                    type="button"
+                    onClick={handleOpenReduceUniversal}
+                    className="justify-center px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] sm:text-xs font-black flex items-center gap-1.5 shadow-md shadow-rose-500/20 active:scale-95 transition-all"
+                    title="Kurangi stok bahan dapur secara universal"
+                  >
+                    <Minus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[3]" />
+                    <span className="truncate">Kurangi Stok</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setIsCatManageOpen(true)}
+                  className="justify-center px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-[#FFF8E1] hover:bg-[#FFECB3] border border-[#FFE082] text-[#3E2723] text-[11px] sm:text-xs font-black flex items-center gap-1.5 transition-all shadow-xs"
+                  title="Kelola & Atur Kategori"
+                >
+                  <Tags className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#FFB300]" />
+                  <span className="truncate">Kategori</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsClearStockOpen(true)}
+                  className="col-span-2 sm:col-span-1 justify-center px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-stone-100 hover:bg-rose-50 border border-stone-200 hover:border-rose-200 text-[#8D6E63] hover:text-rose-700 text-[11px] sm:text-xs font-black flex items-center gap-1.5 transition-all shadow-xs"
+                  title="Hapus Database Stok"
+                >
+                  <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span className="truncate">Hapus Stok</span>
+                </button>
+              </div>
             </div>
 
-            {/* Quick Actions */}
-            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto">
+            {/* Segmented Tab Switcher: Bahan Baku vs Stok Produk Ready */}
+            <div className="flex items-center p-1 bg-[#FAF7F2] rounded-2xl border border-[#EFE4DA] text-xs font-black max-w-md">
               <button
                 type="button"
-                onClick={handleOpenAdd}
-                className="justify-center px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#FFB300] to-[#FFA000] hover:brightness-105 text-[#3E2723] text-[11px] sm:text-xs font-black flex items-center gap-1.5 shadow-md shadow-[#FFB300]/25 active:scale-95 transition-all"
+                onClick={() => {
+                  setActiveTab('materials');
+                  setSelectedCategoryId('all');
+                }}
+                className={`flex-1 py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all ${
+                  activeTab === 'materials'
+                    ? 'bg-[#3E2723] text-[#FFB300] shadow-sm'
+                    : 'text-[#8D6E63] hover:text-[#3E2723]'
+                }`}
               >
-                <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[3]" />
-                <span className="truncate">Tambah Bahan</span>
+                <Boxes className="w-4 h-4" />
+                <span>Bahan Baku Dapur</span>
               </button>
               <button
                 type="button"
-                onClick={handleOpenReduceUniversal}
-                className="justify-center px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] sm:text-xs font-black flex items-center gap-1.5 shadow-md shadow-rose-500/20 active:scale-95 transition-all"
-                title="Kurangi stok bahan dapur secara universal"
+                onClick={() => {
+                  setActiveTab('products');
+                  setSelectedCategoryId('all');
+                }}
+                className={`flex-1 py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all ${
+                  activeTab === 'products'
+                    ? 'bg-[#3E2723] text-[#FFB300] shadow-sm'
+                    : 'text-[#8D6E63] hover:text-[#3E2723]'
+                }`}
               >
-                <Minus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[3]" />
-                <span className="truncate">Kurangi Stok</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsCatManageOpen(true)}
-                className="justify-center px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-[#FFF8E1] hover:bg-[#FFECB3] border border-[#FFE082] text-[#3E2723] text-[11px] sm:text-xs font-black flex items-center gap-1.5 transition-all shadow-xs"
-                title="Kelola & Atur Kategori"
-              >
-                <Tags className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#FFB300]" />
-                <span className="truncate">Kategori</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsClearStockOpen(true)}
-                className="col-span-2 sm:col-span-1 justify-center px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-stone-100 hover:bg-rose-50 border border-stone-200 hover:border-rose-200 text-[#8D6E63] hover:text-rose-700 text-[11px] sm:text-xs font-black flex items-center gap-1.5 transition-all shadow-xs"
-                title="Hapus Database Stok Bahan dari Supabase"
-              >
-                <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                <span className="truncate">Hapus Stok</span>
+                <Sparkles className="w-4 h-4" />
+                <span>Stok Produk Ready</span>
               </button>
             </div>
           </div>
 
-          {/* Filters & Search */}
-          <div className="space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              {/* Status Filter */}
-              <div className="flex items-center bg-white/90 backdrop-blur-md rounded-2xl border-2 border-[#EFE4DA] p-1 text-xs">
+          {/* Filters Bar: Dropdown Kategori & Status & Search */}
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-white/90 backdrop-blur-md border border-[#EFE4DA] shadow-xs space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+              {/* DROPDOWN FILTER KATEGORI (Rapi, Responsif & Hemat Ruang) */}
+              <div className="sm:col-span-5 flex items-center gap-2">
+                <span className="p-2 rounded-xl bg-[#FAF7F2] border border-[#EFE4DA] text-[#8D6E63] shrink-0">
+                  <Filter className="w-4 h-4 text-[#FFB300]" />
+                </span>
+                <div className="flex-1">
+                  <select
+                    value={selectedCategoryId}
+                    onChange={(e) => setSelectedCategoryId(e.target.value)}
+                    className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-xl px-3 py-2 text-xs font-black text-[#3E2723] focus:outline-none transition-all shadow-2xs"
+                  >
+                    <option value="all">
+                      Semua Kategori {activeTab === 'materials' ? 'Bahan Baku' : 'Produk'} ({currentCategories.length})
+                    </option>
+                    {currentCategories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Status Filter: Bahan (Semua/Kritis/Aman) atau Produk Ready (Semua/Tersedia/Hampir Habis/Habis) */}
+              {activeTab === 'products' ? (
+              <div className="sm:col-span-3 grid grid-cols-4 bg-[#FAF7F2] rounded-xl border border-[#EFE4DA] p-1 text-[10px] gap-0.5">
+                {([
+                  { id: 'all', label: 'Semua', active: 'bg-[#3E2723] text-white', idle: 'text-[#8D6E63] hover:text-[#3E2723]' },
+                  { id: 'available', label: 'Tersedia', active: 'bg-emerald-600 text-white', idle: 'text-emerald-700 hover:bg-emerald-50' },
+                  { id: 'low', label: 'Menipis', active: 'bg-amber-500 text-white', idle: 'text-amber-700 hover:bg-amber-50' },
+                  { id: 'out', label: 'Habis', active: 'bg-rose-600 text-white', idle: 'text-rose-700 hover:bg-rose-50' },
+                ] as const).map((f) => (
+                  <button
+                    key={f.id}
+                    id={`ready-filter-${f.id}`}
+                    type="button"
+                    onClick={() => setReadyStatusFilter(f.id)}
+                    title={f.id === 'low' ? 'Hampir Habis (≤ stok minimum)' : undefined}
+                    className={`py-1 rounded-lg font-black transition-all flex flex-col items-center leading-tight ${
+                      readyStatusFilter === f.id ? `${f.active} shadow-2xs` : f.idle
+                    }`}
+                  >
+                    <span className="flex items-center gap-0.5">
+                      {f.id === 'out' && <PackageX className="w-3 h-3" />}
+                      {f.label}
+                    </span>
+                    <span className="opacity-80">{readyCounts[f.id]}</span>
+                  </button>
+                ))}
+              </div>
+              ) : (
+              <div className="sm:col-span-3 grid grid-cols-3 bg-[#FAF7F2] rounded-xl border border-[#EFE4DA] p-1 text-[10px] gap-0.5">
                 <button
                   type="button"
                   onClick={() => setStockStatusFilter('all')}
-                  className={`px-3 py-1.5 rounded-xl font-black transition-all ${
+                  className={`py-1 rounded-lg font-black transition-all flex flex-col items-center leading-tight ${
                     stockStatusFilter === 'all'
-                      ? 'bg-[#3E2723] text-white'
+                      ? 'bg-[#3E2723] text-white shadow-2xs'
                       : 'text-[#8D6E63] hover:text-[#3E2723]'
                   }`}
                 >
-                  Semua ({rawMaterials.length})
+                  <span>Semua</span>
+                  <span className="opacity-80">{materialCounts.all}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setStockStatusFilter('low')}
-                  className={`px-3 py-1.5 rounded-xl font-black transition-all flex items-center gap-1 ${
+                  className={`py-1 rounded-lg font-black transition-all flex flex-col items-center leading-tight ${
                     stockStatusFilter === 'low'
-                      ? 'bg-[#D81B60] text-white'
+                      ? 'bg-[#D81B60] text-white shadow-2xs'
                       : 'text-[#D81B60] hover:bg-rose-50'
                   }`}
                 >
-                  <AlertTriangle className="w-3 h-3" />
-                  <span>Kritis</span>
+                  <span className="flex items-center gap-0.5">
+                    <AlertTriangle className="w-2.5 h-2.5" />
+                    <span>Kritis</span>
+                  </span>
+                  <span className="opacity-80">{materialCounts.low}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setStockStatusFilter('safe')}
-                  className={`px-3 py-1.5 rounded-xl font-black transition-all flex items-center gap-1 ${
+                  className={`py-1 rounded-lg font-black transition-all flex flex-col items-center leading-tight ${
                     stockStatusFilter === 'safe'
-                      ? 'bg-emerald-600 text-white'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
                       : 'text-emerald-700 hover:bg-emerald-50'
                   }`}
                 >
-                  <CheckCircle2 className="w-3 h-3" />
-                  <span>Aman</span>
+                  <span className="flex items-center gap-0.5">
+                    <CheckCircle2 className="w-2.5 h-2.5" />
+                    <span>Aman</span>
+                  </span>
+                  <span className="opacity-80">{materialCounts.safe}</span>
                 </button>
               </div>
+              )}
 
               {/* Search Bar */}
-              <div className="relative flex-1 sm:w-64">
-                <Search className="w-4 h-4 text-[#A1887F] absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <div className="sm:col-span-4 relative">
+                <Search className="w-4 h-4 text-[#A1887F] absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Cari nama bahan / kategori..."
-                  className="w-full bg-white/90 backdrop-blur-md border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl pl-10 pr-9 py-2.5 text-xs text-[#3E2723] font-bold placeholder-[#A1887F] focus:outline-none"
+                  placeholder="Cari nama barang / varian..."
+                  className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-xl pl-9 pr-8 py-1.5 text-xs text-[#3E2723] font-bold placeholder-[#A1887F] focus:outline-none"
                 />
                 {searchQuery && (
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8D6E63] hover:text-[#3E2723]"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8D6E63] hover:text-[#3E2723]"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
             </div>
-
-            {/* Sub-Category Filters */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1 no-scrollbar">
-              <button
-                type="button"
-                onClick={() => setSelectedCategoryId('all')}
-                className={`px-4 py-2 rounded-2xl text-xs font-black shrink-0 transition-all border ${
-                  selectedCategoryId === 'all'
-                    ? 'bg-[#3E2723] text-white border-[#3E2723]'
-                    : 'bg-white/90 backdrop-blur-sm text-[#6D4C41] border-[#EFE4DA] hover:border-[#FFB300]'
-                }`}
-              >
-                Semua Kategori
-              </button>
-              {materialCategories.map((cat) => {
-                const isSelected = selectedCategoryId === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => setSelectedCategoryId(cat.id)}
-                    className={`px-4 py-2 rounded-2xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 border ${
-                      isSelected
-                        ? 'bg-[#FFECB3] text-[#3E2723] border-[#FFB300]'
-                        : 'bg-white/90 backdrop-blur-sm text-[#6D4C41] border-[#EFE4DA] hover:border-[#FFB300]'
-                    }`}
-                  >
-                    <CategoryIcon name={cat.iconName} className="w-4 h-4" />
-                    <span>{cat.name}</span>
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                onClick={() => setIsCatManageOpen(true)}
-                className="px-3.5 py-2 rounded-2xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 bg-[#FFF8E1] text-[#E65100] border border-[#FFE082] hover:bg-[#FFE082]"
-                title="Kelola & Tambah Kategori"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ Atur Kategori</span>
-              </button>
-            </div>
           </div>
 
-          {/* BAHAN BAKU (Per Kategori Bersih & Akumulasi Stok dengan Satuan Dinamis) */}
-          {categoryStockList.length === 0 ? (
-            <div className="p-8 sm:p-12 text-center rounded-3xl bg-white/90 backdrop-blur-md border border-[#EFE4DA]">
-              <Boxes className="w-12 h-12 text-[#BCAAA4] mx-auto mb-3 opacity-60" />
-              <h3 className="font-black text-[#3E2723] text-base">Tidak ada persediaan bahan baku yang cocok</h3>
-              <p className="text-xs text-[#8D6E63] mt-1">Coba ubah kata kunci pencarian atau filter kategori di atas.</p>
-            </div>
+          {/* KONTEN STOK:
+              1. Jika activeTab === 'products': Tampilkan ReadyProductList (Produk Ready siap saji)
+              2. Jika activeTab === 'materials': Tampilkan MaterialList (Semua jenis bahan baku tampil per nama merek dengan label kategori di atasnya) */}
+          {activeTab === 'products' ? (
+            /* VIEW PRODUK READY: Kartu daftar produk langsung tampil */
+            <ReadyProductList
+              products={readyProductsList}
+              categories={categories}
+              onEdit={handleOpenEditProduct}
+              onDelete={handleDeleteProduct}
+              onAdd={handleOpenAdd}
+            />
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-4">
-              {categoryStockList.map((item) => {
-                return (
-                  <motion.div
-                    key={item.cat.id}
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    className={`p-3 sm:p-4 rounded-2xl sm:rounded-3xl bg-white/95 backdrop-blur-md border transition-all flex flex-col justify-between ${
-                      item.isLow
-                        ? 'border-[#F48FB1] bg-gradient-to-b from-white to-[#FCE4EC]/30 shadow-xs'
-                        : 'border-[#EFE4DA] shadow-xs'
-                    }`}
-                  >
-                    <div>
-                      {/* Top Badges & Actions */}
-                      <div className="flex items-center justify-between gap-1">
-                        <span
-                          className={`text-[9px] sm:text-[10px] font-black px-2.5 py-1 rounded-xl flex items-center gap-1.5 truncate max-w-[70%] ${item.cat.bgColor} ${item.cat.textColor}`}
-                        >
-                          <CategoryIcon name={item.cat.iconName} className="w-3.5 h-3.5 shrink-0" />
-                          <span className="truncate">{item.cat.name}</span>
-                        </span>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          {item.isLow ? (
-                            <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-[#FCE4EC] text-[#D81B60] border border-[#F8BBD0]">
-                              Kritis
-                            </span>
-                          ) : (
-                            <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-[#E8F5E9] text-[#2E7D32] border border-[#C8E6C9]">
-                              Aman
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Nama Kategori */}
-                      <h3 className="font-black text-[#3E2723] text-sm sm:text-base mt-2.5 truncate">
-                        {item.cat.name}
-                      </h3>
-                      <p className="text-[10px] text-[#8D6E63] font-medium mt-0.5">
-                        Kategori Bahan Dapur ({item.itemCount} item)
-                      </p>
-
-                      {/* Total Persediaan Stok (Satuan Dinamis Sesuai Kategori) */}
-                      <div className="mt-2.5 p-2.5 rounded-xl bg-[#FAF7F2] border border-[#EFE4DA]">
-                        <span className="text-[9px] sm:text-[10px] uppercase font-bold text-[#8D6E63] block">
-                          Total Persediaan
-                        </span>
-                        <p className={`text-base sm:text-2xl font-black mt-0.5 ${item.isLow ? 'text-[#D81B60]' : 'text-[#3E2723]'}`}>
-                          {item.totalStock}{' '}
-                          <span className="text-xs font-semibold text-[#8D6E63]">{item.unit}</span>
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Tombol Kurangi Stok */}
-                    <div className="mt-3 pt-2.5 border-t border-[#EFE4DA]/80">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenReduceCategory(item.cat.id, item.cat.name)}
-                        className="w-full py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-[11px] sm:text-xs font-black flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all"
-                      >
-                        <Minus className="w-3.5 h-3.5 stroke-[3]" />
-                        <span>Kurangi Stok</span>
-                      </button>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
+            /* VIEW BAHAN BAKU DAPUR: Kartu daftar bahan baku langsung tampil per merek dengan label kategori di atasnya */
+            <MaterialList
+              materials={filteredMaterialsList}
+              categories={categories}
+              onEdit={(m) => {
+                setItemToEdit(m);
+                setIsItemModalOpen(true);
+              }}
+              onDelete={(m) => {
+                setMaterialToDeleteSync({ id: m.id, name: m.name });
+              }}
+              onReduce={(m) => {
+                setReduceCategoryTarget({
+                  id: m.categoryId,
+                  name: m.category,
+                  materialId: m.id,
+                  materialName: m.name,
+                });
+                setIsReduceOpen(true);
+              }}
+              onAdd={handleOpenAdd}
+            />
           )}
         </main>
       </div>
@@ -392,31 +523,48 @@ export default function StockPage() {
       <ItemModal
         isOpen={isItemModalOpen}
         onClose={() => setIsItemModalOpen(false)}
-        mode="material"
+        mode={activeTab === 'materials' ? 'material' : 'product'}
         itemToEdit={itemToEdit}
+        onSuccess={showToast}
       />
       <ReduceStockModal
         isOpen={isReduceOpen}
-        onClose={() => setIsReduceOpen(false)}
+        onClose={() => {
+          setIsReduceOpen(false);
+          setReduceCategoryTarget(null);
+        }}
         initialCategoryId={reduceCategoryTarget?.id}
         initialCategoryName={reduceCategoryTarget?.name}
+        initialMaterialId={reduceCategoryTarget?.materialId}
+        initialMaterialName={reduceCategoryTarget?.materialName}
       />
       <CategoryManageModal
         isOpen={isCatManageOpen}
         onClose={() => setIsCatManageOpen(false)}
-        initialType="material"
+        initialType={activeTab === 'materials' ? 'material' : 'product'}
+      />
+      <CategoryDetailModal
+        isOpen={detailModalState.isOpen}
+        onClose={() => setDetailModalState((prev) => ({ ...prev, isOpen: false }))}
+        category={detailModalState.category}
+        items={detailModalState.items}
+        type={detailModalState.type}
       />
       <DeleteDatabaseModal
         isOpen={isClearStockOpen}
         onClose={() => setIsClearStockOpen(false)}
         onConfirm={async () => {
-          const res = await clearStockData('all');
+          const res = await clearStockData(activeTab === 'materials' ? 'materials' : 'products');
           showToast(res.message);
         }}
-        title="Hapus Database Stok Bahan"
-        itemCountText={`${rawMaterials.length} Bahan Baku`}
-        description="Tindakan ini akan mengosongkan seluruh data persediaan bahan baku dapur dari database Supabase dan penyimpanan lokal."
-        warningNote="Semua stok bahan akan dikosongkan permanen. Anda dapat menambahkan item baru sewaktu-waktu."
+        title={`Hapus Database Stok ${activeTab === 'materials' ? 'Bahan Baku' : 'Produk Ready'}`}
+        itemCountText={
+          activeTab === 'materials'
+            ? `${rawMaterials.length} Bahan Baku`
+            : `${finishedProducts.length} Produk Ready`
+        }
+        description="Tindakan ini akan mengosongkan seluruh data persediaan dari database Supabase dan penyimpanan lokal."
+        warningNote="Semua stok akan dikosongkan permanen. Anda dapat menambahkan item baru sewaktu-waktu."
         confirmButtonText="Ya, Hapus Semua Stok dari Supabase"
       />
       {materialToDeleteSync && (

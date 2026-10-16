@@ -19,12 +19,29 @@ export function formatNumber(value: number): string {
 }
 
 export function cleanTrxDescription(desc: string): string {
-  return (desc || '').replace(/\s*\[ref:[^\]]+\]/g, '').trim();
+  return (desc || '')
+    .replace(/\s*\[ref:[^\]]+\]/g, '')
+    .replace(/\s*\[prod:[^\]]+\]/g, '')
+    .trim();
 }
 
 export function extractTrxMaterialRef(desc: string): string | null {
   const match = (desc || '').match(/\[ref:([^\]]+)\]/);
   return match ? match[1] : null;
+}
+
+/**
+ * Tag referensi produk jadi pada transaksi penjualan: `[prod:<productId>:<qty>]`.
+ * Dipakai untuk mengembalikan stok saat transaksi penjualan dihapus.
+ */
+export function buildTrxProductRef(productId: string, qty: number): string {
+  return `[prod:${productId}:${qty}]`;
+}
+
+export function extractTrxProductRef(desc: string): { productId: string; qty: number } | null {
+  const match = (desc || '').match(/\[prod:([^\]:]+):(\d+(?:\.\d+)?)\]/);
+  if (!match) return null;
+  return { productId: match[1], qty: Number(match[2]) };
 }
 
 export type UnitGroupType = 'weight' | 'volume' | 'count';
@@ -140,6 +157,82 @@ export function getTransactionQuantity(trx: {
   }
 
   return '-';
+}
+
+export function getTransactionItemName(
+  trx: { description?: string; category?: string; type?: 'income' | 'expense' },
+  products: { id?: string; name: string; category?: string }[] = [],
+  materials: { id?: string; name: string; category?: string }[] = []
+): string {
+  const desc = trx.description || '';
+  const cat = (trx.category || '').trim();
+
+  // 1. Cek tag referensi produk jadi: [prod:<id>:<qty>]
+  const prodRef = extractTrxProductRef(desc);
+  if (prodRef) {
+    const matched = products.find((p) => p.id === prodRef.productId);
+    if (matched) return matched.name;
+  }
+
+  // 2. Cek tag referensi bahan baku: [ref:<id>]
+  const matRef = extractTrxMaterialRef(desc);
+  if (matRef) {
+    const matched = materials.find((m) => m.id === matRef);
+    if (matched) return matched.name;
+  }
+
+  // 3. Cek kecocokan nama produk jadi yang terdaftar
+  const matchedProd = products.find(
+    (p) => p.name && p.name.trim().length > 1 && desc.toLowerCase().includes(p.name.toLowerCase().trim())
+  );
+  if (matchedProd) return matchedProd.name;
+
+  // 4. Cek kecocokan nama bahan baku yang terdaftar
+  const matchedMat = materials.find(
+    (m) => m.name && m.name.trim().length > 1 && desc.toLowerCase().includes(m.name.toLowerCase().trim())
+  );
+  if (matchedMat) return matchedMat.name;
+
+  // 5. Cek kurung nama bahan baku spesifik, misal: "Belanja Bahan: Gula (gula abc) (+1 kg)" -> "gula abc"
+  const bracketMatches = Array.from(desc.matchAll(/\(([^)]+)\)/g));
+  for (const match of bracketMatches) {
+    const inside = match[1].trim();
+    if (!/^[+-]?\d/.test(inside)) {
+      return inside;
+    }
+  }
+
+  // 6. Jika kategori transaksi adalah kategori produk spesifik (bukan kategori umum pembukuan)
+  const genericCategories = [
+    'penjualan toko',
+    'penjualan umum',
+    'penjualan',
+    'belanja bahan baku',
+    'belanja',
+    'operasional dapur',
+    'biaya operasional',
+    'pesanan khusus / katering',
+    'lainnya',
+    'item toko',
+  ];
+  if (cat && !genericCategories.includes(cat.toLowerCase())) {
+    return cat;
+  }
+
+  // 7. Jika ada awalan aksi transaksi: "Penjualan <Nama Produk>" atau "Belanja <Nama Bahan>"
+  const actionMatch = cleanTrxDescription(desc).match(
+    /^(?:penjualan|pembelian|belanja|restock|kulakan|pesanan)\s+(.+)$/i
+  );
+  if (actionMatch && actionMatch[1].trim()) {
+    return actionMatch[1].trim();
+  }
+
+  // 8. Fallback ke category jika ada
+  if (cat && cat.toLowerCase() !== 'lainnya' && cat.toLowerCase() !== 'penjualan toko') {
+    return cat;
+  }
+
+  return cat || 'Produk Toko';
 }
 
 

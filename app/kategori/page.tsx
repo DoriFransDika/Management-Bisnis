@@ -23,9 +23,14 @@ import { useStore } from '@/lib/store';
 import { Sidebar } from '@/components/navigation/Sidebar';
 import { BottomNav } from '@/components/navigation/BottomNav';
 import { Header } from '@/components/navigation/Header';
-import { CategoryIcon, AVAILABLE_CATEGORY_ICONS, CATEGORY_COLOR_PRESETS } from '@/components/common/CategoryIcon';
+import {
+  CategoryIcon,
+  MATERIAL_CATEGORY_ICONS,
+  PRODUCT_CATEGORY_ICONS,
+  CATEGORY_COLOR_PRESETS
+} from '@/components/common/CategoryIcon';
 import { Category, UnitGroup } from '@/types';
-import { getCategoryUnitGroup, cleanCategoryDescription } from '@/lib/utils';
+import { getCategoryUnitGroup } from '@/lib/utils';
 
 export default function CategoryManagerPage() {
   const {
@@ -48,7 +53,6 @@ export default function CategoryManagerPage() {
   const [unitGroup, setUnitGroup] = useState<UnitGroup>('weight');
   const [iconName, setIconName] = useState('Wheat');
   const [selectedColorPreset, setSelectedColorPreset] = useState(CATEGORY_COLOR_PRESETS[0]);
-  const [description, setDescription] = useState('');
   const [alertMsg, setAlertMsg] = useState<{ success: boolean; text: string } | null>(null);
 
   const openCreateModal = () => {
@@ -58,7 +62,6 @@ export default function CategoryManagerPage() {
     setUnitGroup('weight');
     setIconName(activeTab === 'material' ? 'Wheat' : 'Croissant');
     setSelectedColorPreset(CATEGORY_COLOR_PRESETS[0]);
-    setDescription('');
     setAlertMsg(null);
     setIsModalOpen(true);
   };
@@ -71,7 +74,6 @@ export default function CategoryManagerPage() {
     setIconName(cat.iconName);
     const foundPreset = CATEGORY_COLOR_PRESETS.find((p) => p.bg === cat.bgColor) || CATEGORY_COLOR_PRESETS[0];
     setSelectedColorPreset(foundPreset);
-    setDescription(cleanCategoryDescription(cat.description) || '');
     setAlertMsg(null);
     setIsModalOpen(true);
   };
@@ -80,8 +82,7 @@ export default function CategoryManagerPage() {
     e.preventDefault();
     if (!name.trim()) return;
 
-    const cleanDesc = cleanCategoryDescription(description);
-    const finalDesc = type === 'material' ? `${cleanDesc} [unit:${unitGroup}]`.trim() : cleanDesc;
+    const finalDesc = type === 'material' ? `[unit:${unitGroup}]` : undefined;
 
     if (editingCategory) {
       updateCategory(editingCategory.id, {
@@ -203,11 +204,6 @@ export default function CategoryManagerPage() {
           {/* Category Cards Grid (3-4 Kolom Kompak: Hanya Ikon & Nama) */}
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3">
             {filteredCategories.map((cat) => {
-              const count =
-                cat.type === 'material'
-                  ? rawMaterials.filter((m) => m.categoryId === cat.id).length
-                  : finishedProducts.filter((p) => p.categoryId === cat.id).length;
-
               return (
                 <div
                   key={cat.id}
@@ -238,23 +234,11 @@ export default function CategoryManagerPage() {
                     <CategoryIcon name={cat.iconName} className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.5]" />
                   </div>
 
-                  {/* Category Name & Item Count */}
+                  {/* Category Name */}
                   <div className="mt-2 w-full">
                     <h3 className="font-black text-[#3E2723] text-xs sm:text-sm truncate px-1">
                       {cat.name}
                     </h3>
-                    <p className="text-[10px] text-[#8D6E63] font-medium mt-0.5">
-                      {count} {cat.type === 'material' ? 'bahan' : 'roti'}
-                    </p>
-                    {cat.type === 'material' && (
-                      <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-[#FFF3E0] text-[#E65100] border border-[#FFE0B2]">
-                        {getCategoryUnitGroup(cat) === 'weight'
-                          ? 'Berat (gram/kg)'
-                          : getCategoryUnitGroup(cat) === 'volume'
-                          ? 'Volume (Liter/ml)'
-                          : 'Unit (pcs/kaleng)'}
-                      </span>
-                    )}
                   </div>
                 </div>
               );
@@ -308,7 +292,12 @@ export default function CategoryManagerPage() {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setType('material')}
+                    onClick={() => {
+                      setType('material');
+                      if (!MATERIAL_CATEGORY_ICONS.some((i) => i.name.toLowerCase() === iconName.toLowerCase())) {
+                        setIconName('Wheat');
+                      }
+                    }}
                     className={`py-2.5 rounded-2xl text-xs font-black border transition-all ${
                       type === 'material'
                         ? 'bg-[#FFB300] border-[#FFB300] text-[#3E2723] shadow-xs'
@@ -319,7 +308,12 @@ export default function CategoryManagerPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setType('product')}
+                    onClick={() => {
+                      setType('product');
+                      if (!PRODUCT_CATEGORY_ICONS.some((i) => i.name.toLowerCase() === iconName.toLowerCase())) {
+                        setIconName('Croissant');
+                      }
+                    }}
                     className={`py-2.5 rounded-2xl text-xs font-black border transition-all ${
                       type === 'product'
                         ? 'bg-[#FFB300] border-[#FFB300] text-[#3E2723] shadow-xs'
@@ -410,14 +404,14 @@ export default function CategoryManagerPage() {
                 />
               </div>
 
-              {/* Icon Picker */}
+              {/* Icon Picker (Khusus Bahan Baku atau Khusus Produk) */}
               <div>
                 <label className="block text-xs font-black uppercase text-[#6D4C41] mb-1.5">
-                  Pilih Logo / Ikon Kategori
+                  Pilih Logo / Ikon Kategori {type === 'material' ? '(Bahan Baku)' : '(Produk Jadi)'}
                 </label>
                 <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 max-h-36 overflow-y-auto p-2.5 bg-white rounded-2xl border border-[#EFE4DA]">
-                  {AVAILABLE_CATEGORY_ICONS.map((item) => {
-                    const isSelected = iconName === item.name;
+                  {(type === 'material' ? MATERIAL_CATEGORY_ICONS : PRODUCT_CATEGORY_ICONS).map((item) => {
+                    const isSelected = iconName.toLowerCase() === item.name.toLowerCase();
                     return (
                       <button
                         key={item.name}
@@ -462,20 +456,6 @@ export default function CategoryManagerPage() {
                     );
                   })}
                 </div>
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="block text-xs font-black uppercase text-[#6D4C41] mb-1.5">
-                  Keterangan (Opsional)
-                </label>
-                <input
-                  type="text"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Contoh: Khusus adonan lembut dan roti manis"
-                  className="w-full bg-white border border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-4 py-2.5 text-xs text-[#3E2723] focus:outline-none"
-                />
               </div>
 
               {/* Preview Card */}

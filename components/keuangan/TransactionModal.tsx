@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Receipt, X, Check } from 'lucide-react';
+import { Receipt, X, Check, ShoppingBag, AlertTriangle } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { formatRupiah } from '@/lib/utils';
 
@@ -12,15 +12,17 @@ interface TransactionModalProps {
 }
 
 export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModalProps) {
-  const { categories, addTransaction } = useStore();
+  const { categories, finishedProducts, recordProductSale } = useStore();
 
   const productCategories = categories.filter((c) => c.type === 'product');
 
   // Form State
+  const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [category, setCategory] = useState<string>('Penjualan Toko');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [quantity, setQuantity] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Quick Calculator helper
   const [calcUnitPrice, setCalcUnitPrice] = useState('');
@@ -28,35 +30,75 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const finalAmount = Number(amount);
-    if (!finalAmount || finalAmount <= 0 || !description.trim()) return;
+  const selectedProduct = finishedProducts.find((p) => p.id === selectedProductId);
+  const readyProducts = finishedProducts.filter((p) => p.stock > 0);
+  const parsedQty = Number(calcPcs) || parseInt(quantity) || 0;
+  const exceedsStock = Boolean(selectedProduct && parsedQty > selectedProduct.stock);
 
-    const finalQuantity = quantity.trim() || (calcPcs ? `+${calcPcs} pcs` : undefined);
+  const handleProductSelect = (prodId: string) => {
+    setSelectedProductId(prodId);
+    setErrorMsg(null);
+    if (!prodId) {
+      setCategory('Penjualan Toko');
+      return;
+    }
 
-    addTransaction({
-      date: new Date().toISOString().split('T')[0],
-      type: 'income',
-      category,
-      amount: finalAmount,
-      description: description.trim(),
-      paymentMethod: 'Tunai',
-      quantity: finalQuantity,
-    });
+    const prod = finishedProducts.find((p) => p.id === prodId);
+    if (prod) {
+      setCategory(prod.category || 'Penjualan Toko');
+      setDescription(`Penjualan ${prod.name}`);
+      if (prod.sellingPrice > 0) {
+        setCalcUnitPrice(String(prod.sellingPrice));
+      }
+    }
+  };
 
-    const formattedAmount = formatRupiah(finalAmount);
-
+  const resetForm = () => {
+    setSelectedProductId('');
+    setCategory('Penjualan Toko');
     setAmount('');
     setQuantity('');
     setCalcUnitPrice('');
     setCalcPcs('');
     setDescription('');
-    onClose();
+    setErrorMsg(null);
+  };
 
-    if (onSuccess) {
-      onSuccess(`Transaksi penjualan ${formattedAmount} berhasil dicatat!`);
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+
+    if (selectedProduct && parsedQty <= 0) {
+      setErrorMsg(`Isi jumlah ${selectedProduct.name} yang terjual.`);
+      return;
     }
+
+    const finalQuantity = quantity.trim() || (calcPcs ? `${calcPcs} ${selectedProduct?.unit || 'pcs'}` : undefined);
+
+    // Validasi stok & pengurangan stok produk dilakukan terpusat di store (Manajemen Stok)
+    const res = recordProductSale({
+      productId: selectedProductId || undefined,
+      qty: parsedQty,
+      amount: Number(amount),
+      category,
+      description,
+      paymentMethod: 'Tunai',
+      quantityLabel: finalQuantity,
+    });
+
+    if (!res.success) {
+      setErrorMsg(res.message);
+      return;
+    }
+
+    resetForm();
+    onClose();
+    onSuccess?.(res.message);
   };
 
   const calculatedTotal =
@@ -64,7 +106,7 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white border-2 border-[#EFE4DA] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl shadow-[#3E2723]/20 p-6 space-y-4">
+      <div className="bg-white border-2 border-[#EFE4DA] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl shadow-[#3E2723]/20 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-2 border-b border-[#EFE4DA]">
           <div className="flex items-center gap-2">
@@ -75,7 +117,7 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="w-8 h-8 rounded-full bg-[#FAF7F2] text-[#6D4C41] flex items-center justify-center hover:bg-stone-200 transition-colors"
           >
             <X className="w-4 h-4" />
@@ -86,21 +128,80 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
         <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2 font-medium">
           <span className="text-base shrink-0">💡</span>
           <span>
-            <strong>Informasi Kas:</strong> Data ini otomatis masuk sebagai <strong>uang pemasukan (omset)</strong> ke buku kas toko.
+            <strong>Informasi:</strong> Harga jual diatur di sini, dan stok produk jadi yang dipilih otomatis berkurang saat transaksi disimpan.
           </span>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
+          {/* Pilih Produk Jadi Ready (Untuk Pengurangan Stok Otomatis) */}
+          {finishedProducts.length > 0 && (
+            <div>
+              <label className="block text-xs font-black text-[#3E2723] mb-1 flex items-center gap-1.5">
+                <ShoppingBag className="w-3.5 h-3.5 text-[#2E7D32]" />
+                <span>Pilih Produk Ready (Stok Terpotong Otomatis)</span>
+              </label>
+              <select
+                value={selectedProductId}
+                onChange={(e) => handleProductSelect(e.target.value)}
+                className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-blue-500 rounded-2xl px-3 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none"
+              >
+                <option value="">-- Pilih Produk Ready (Opsional) --</option>
+                {readyProducts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} — {p.category} (Ready: {p.stock} {p.unit})
+                  </option>
+                ))}
+              </select>
+              {readyProducts.length === 0 && (
+                <p className="mt-1 text-[11px] text-amber-700 font-semibold">
+                  Semua stok produk saat ini sedang kosong (0 pcs).
+                </p>
+              )}
+              {selectedProduct && (
+                <div
+                  className={`mt-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center justify-between ${
+                    exceedsStock
+                      ? 'bg-rose-50 border-rose-200 text-rose-800'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  }`}
+                >
+                  <span>Sisa Stok Tersedia:</span>
+                  <span className="font-black">
+                    {selectedProduct.stock} {selectedProduct.unit}
+                    {parsedQty > 0 && !exceedsStock && (
+                      <span className="font-semibold"> → sisa {selectedProduct.stock - parsedQty}</span>
+                    )}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Kategori Penjualan */}
           <div>
-            <label className="block text-xs font-black text-[#3E2723] mb-1">
-              Kategori Produk Penjualan
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-black text-[#3E2723]">
+                Kategori Penjualan
+              </label>
+              {selectedProduct && (
+                <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full flex items-center gap-1 border border-amber-200">
+                  🔒 Terkunci (Mengikuti Produk)
+                </span>
+              )}
+            </div>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-blue-500 rounded-2xl px-3 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none"
+              disabled={Boolean(selectedProductId)}
+              className={`w-full border-2 rounded-2xl px-3 py-2.5 text-xs font-bold focus:outline-none transition-all ${
+                selectedProductId
+                  ? 'bg-stone-100 border-[#EFE4DA] text-stone-600 cursor-not-allowed opacity-90'
+                  : 'bg-[#FAF7F2] border-[#EFE4DA] focus:border-blue-500 text-[#3E2723]'
+              }`}
             >
+              {category && !productCategories.some((cat) => cat.name === category) && category !== 'Penjualan Toko' && category !== 'Pesanan Khusus / Katering' && category !== 'Lainnya' && (
+                <option value={category}>{category}</option>
+              )}
               <option value="Penjualan Toko">Penjualan Toko (Umum)</option>
               {productCategories.map((cat) => (
                 <option key={cat.id} value={cat.name}>
@@ -110,6 +211,11 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
               <option value="Pesanan Khusus / Katering">Pesanan Khusus / Katering</option>
               <option value="Lainnya">Lainnya</option>
             </select>
+            {selectedProduct && (
+              <p className="mt-1 text-[10px] text-[#8D6E63] font-medium">
+                Kategori terkunci otomatis sesuai produk <strong>{selectedProduct.name}</strong> ({selectedProduct.category}).
+              </p>
+            )}
           </div>
 
           {/* Keterangan */}
@@ -122,21 +228,32 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
               required
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Contoh: Pesanan 30 roti abon, penjualan kasir sore"
+              placeholder="Contoh: Penjualan Roti Abon, pesanan katering"
               className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-blue-500 rounded-2xl px-4 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none placeholder-[#A1887F]"
             />
           </div>
 
-          {/* Jumlah / Kuantitas Barang (Opsional) */}
+          {/* Jumlah / Kuantitas Barang */}
           <div>
             <label className="block text-xs font-black text-[#3E2723] mb-1">
-              Jumlah / Kuantitas Barang <span className="text-[#8D6E63] font-normal">(Opsional)</span>
+              Jumlah / Kuantitas {selectedProduct ? `(${selectedProduct.unit})` : 'Barang'}
             </label>
             <input
               type="text"
               value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              placeholder="Contoh: +40 pcs, 2 kg, 10 box"
+              onChange={(e) => {
+                const val = e.target.value;
+                setQuantity(val);
+                const num = parseInt(val);
+                if (!isNaN(num)) {
+                  setCalcPcs(String(num));
+                  if (calcUnitPrice) {
+                    const tot = Number(calcUnitPrice) * num;
+                    if (tot > 0) setAmount(String(tot));
+                  }
+                }
+              }}
+              placeholder={selectedProduct ? `Contoh: 5 ${selectedProduct.unit}` : 'Contoh: 5 pcs, 2 box'}
               className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-blue-500 rounded-2xl px-4 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none placeholder-[#A1887F]"
             />
           </div>
@@ -153,7 +270,7 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
                 min="1"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder="Contoh: 150000"
+                placeholder="Contoh: 50000"
                 className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-blue-500 rounded-2xl px-4 py-2.5 text-sm text-[#3E2723] font-black focus:outline-none"
               />
 
@@ -169,11 +286,11 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
             {/* Bantuan Hitung Cepat (Harga Satuan × Pcs) */}
             <div className="p-3 rounded-2xl bg-[#FAF7F2] border border-[#EFE4DA] space-y-1.5">
               <span className="text-[10px] font-bold text-[#8D6E63] uppercase tracking-wide block">
-                Bantuan Hitung (Opsional: Harga × Pcs):
+                Atur Harga Jual & Hitung Otomatis:
               </span>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <span className="text-[10px] text-[#8D6E63] font-bold block">Harga Satuan (Rp)</span>
+                  <span className="text-[10px] text-[#8D6E63] font-bold block">Harga per Item (Rp)</span>
                   <input
                     type="number"
                     min="0"
@@ -187,12 +304,12 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
                         if (tot > 0) setAmount(String(tot));
                       }
                     }}
-                    placeholder="5000"
+                    placeholder="10000"
                     className="w-full bg-white border border-[#EFE4DA] focus:border-blue-400 rounded-xl px-2.5 py-1.5 text-xs text-[#3E2723] font-bold focus:outline-none mt-0.5"
                   />
                 </div>
                 <div>
-                  <span className="text-[10px] text-[#8D6E63] font-bold block">Jumlah (Pcs)</span>
+                  <span className="text-[10px] text-[#8D6E63] font-bold block">Jumlah Qty</span>
                   <input
                     type="number"
                     min="0"
@@ -200,12 +317,15 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
                     onChange={(e) => {
                       const val = e.target.value;
                       setCalcPcs(val);
+                      if (!quantity || !isNaN(Number(quantity))) {
+                        setQuantity(val ? `${val} ${selectedProduct?.unit || 'pcs'}` : '');
+                      }
                       if (val && calcUnitPrice) {
                         const tot = Number(calcUnitPrice) * Number(val);
                         if (tot > 0) setAmount(String(tot));
                       }
                     }}
-                    placeholder="20"
+                    placeholder="5"
                     className="w-full bg-white border border-[#EFE4DA] focus:border-blue-400 rounded-xl px-2.5 py-1.5 text-xs text-[#3E2723] font-bold focus:outline-none mt-0.5"
                   />
                 </div>
@@ -219,18 +339,30 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
             </div>
           </div>
 
+          {/* Pesan Validasi */}
+          {(errorMsg || exceedsStock) && (
+            <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                {errorMsg ||
+                  `Jumlah melebihi stok! ${selectedProduct?.name} hanya tersedia ${selectedProduct?.stock} ${selectedProduct?.unit}.`}
+              </span>
+            </div>
+          )}
+
           {/* Action Buttons */}
           <div className="pt-3 border-t border-[#EFE4DA] flex items-center justify-end gap-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2.5 rounded-2xl border border-[#EFE4DA] text-xs font-black text-[#8D6E63] hover:bg-stone-50 transition-colors"
             >
               Batal
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-md shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-1.5"
+              disabled={exceedsStock}
+              className="px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-black shadow-md shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-1.5"
             >
               <Check className="w-4 h-4 stroke-[3]" />
               <span>Simpan Transaksi</span>

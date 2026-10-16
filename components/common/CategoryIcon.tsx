@@ -18,23 +18,72 @@ import {
   UtensilsCrossed,
   ShoppingBag,
   Tag,
-  CircleDot
+  CircleDot,
+  Scale,
+  Droplets,
+  Apple,
+  Nut,
+  Citrus,
+  Cherry,
+  FlaskConical,
+  Container,
+  CakeSlice,
+  Donut,
+  Pizza,
+  Sandwich,
+  CupSoda,
+  GlassWater,
+  IceCream,
+  Candy,
+  Popcorn,
+  Soup,
 } from 'lucide-react';
 
-export const AVAILABLE_CATEGORY_ICONS = [
+export const MATERIAL_CATEGORY_ICONS = [
   { name: 'Wheat', label: 'Tepung / Gandum', icon: Wheat },
-  { name: 'Croissant', label: 'Roti & Pastry', icon: Croissant },
-  { name: 'Cookie', label: 'Biskuit / Kue Kering', icon: Cookie },
-  { name: 'Cake', label: 'Cake / Bolu', icon: Cake },
-  { name: 'Egg', label: 'Telur Ayam', icon: Egg },
-  { name: 'Milk', label: 'Susu & Mentega', icon: Milk },
-  { name: 'Flame', label: 'Oven & Panggang', icon: Flame },
-  { name: 'Coffee', label: 'Kopi / Minuman', icon: Coffee },
-  { name: 'Package', label: 'Kemasan / Box', icon: Package },
-  { name: 'Boxes', label: 'Gudang Bahan', icon: Boxes },
+  { name: 'Egg', label: 'Telur Ayam / Bebek', icon: Egg },
+  { name: 'Milk', label: 'Susu & Mentega Cair', icon: Milk },
+  { name: 'Droplets', label: 'Minyak & Cairan', icon: Droplets },
+  { name: 'Flame', label: 'Ragi & Pengembang', icon: Flame },
+  { name: 'Sparkles', label: 'Gula & Pemanis', icon: Sparkles },
+  { name: 'Layers', label: 'Mentega Lembaran / Cokelat Batang', icon: Layers },
+  { name: 'Nut', label: 'Kacang & Selai', icon: Nut },
+  { name: 'Apple', label: 'Buah & Kismis', icon: Apple },
+  { name: 'Citrus', label: 'Lemon & Jeruk', icon: Citrus },
+  { name: 'Cherry', label: 'Ceri & Selai Buah', icon: Cherry },
+  { name: 'FlaskConical', label: 'Perisa, Pasta & Pewarna', icon: FlaskConical },
+  { name: 'Package', label: 'Kemasan, Dus & Mika', icon: Package },
+  { name: 'Boxes', label: 'Gudang & Karung Bahan', icon: Boxes },
+  { name: 'Container', label: 'Toples & Wadah Bahan', icon: Container },
+  { name: 'Scale', label: 'Timbangan & Takaran', icon: Scale },
+];
+
+export const PRODUCT_CATEGORY_ICONS = [
+  { name: 'Croissant', label: 'Roti & Croissant', icon: Croissant },
+  { name: 'Cake', label: 'Cake & Tart', icon: Cake },
+  { name: 'CakeSlice', label: 'Potongan Bolu & Cake Slice', icon: CakeSlice },
+  { name: 'Cookie', label: 'Kue Kering & Cookies', icon: Cookie },
+  { name: 'Donut', label: 'Donat Manis', icon: Donut },
+  { name: 'Pizza', label: 'Pizza & Roti Savory', icon: Pizza },
+  { name: 'Sandwich', label: 'Sandwich & Burger', icon: Sandwich },
+  { name: 'Coffee', label: 'Kopi & Minuman Hangat', icon: Coffee },
+  { name: 'CupSoda', label: 'Minuman Dingin, Es & Boba', icon: CupSoda },
+  { name: 'GlassWater', label: 'Jus Buah & Minuman Segar', icon: GlassWater },
+  { name: 'IceCream', label: 'Es Krim & Dessert Dingin', icon: IceCream },
+  { name: 'Candy', label: 'Permen & Manisan', icon: Candy },
+  { name: 'Popcorn', label: 'Camilan & Popcorn', icon: Popcorn },
+  { name: 'Soup', label: 'Sup, Puding & Dessert', icon: Soup },
+  { name: 'UtensilsCrossed', label: 'Makanan Siap Santap', icon: UtensilsCrossed },
+  { name: 'ShoppingBag', label: 'Paket Roti & Oleh-oleh', icon: ShoppingBag },
+];
+
+// Gabungan semua ikon untuk rendering CategoryIcon & backward-compatibility
+export const AVAILABLE_CATEGORY_ICONS = [
+  ...MATERIAL_CATEGORY_ICONS,
+  ...PRODUCT_CATEGORY_ICONS.filter(
+    (prod) => !MATERIAL_CATEGORY_ICONS.some((mat) => mat.name === prod.name)
+  ),
   { name: 'Heart', label: 'Resep Favorit', icon: Heart },
-  { name: 'Sparkles', label: 'Premium / Spesial', icon: Sparkles },
-  { name: 'ShoppingBag', label: 'Etalase Toko', icon: ShoppingBag },
   { name: 'Tag', label: 'Kategori Umum', icon: Tag },
 ];
 

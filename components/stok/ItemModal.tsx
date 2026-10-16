@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Check, Boxes, Croissant, Plus, Trash2, ArrowRightLeft } from 'lucide-react';
+import { X, Check, Boxes, Croissant, AlertTriangle, Lock } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { Category, RawMaterial, FinishedProduct } from '@/types';
 import { CategoryIcon } from '@/components/common/CategoryIcon';
@@ -12,10 +12,11 @@ interface ItemModalProps {
   onClose: () => void;
   mode: 'material' | 'product';
   itemToEdit?: RawMaterial | FinishedProduct | null;
+  onSuccess?: (msg: string) => void;
 }
 
-export function ItemModal({ isOpen, onClose, mode, itemToEdit }: ItemModalProps) {
-  const { categories, rawMaterials, addNewMaterial, updateMaterial, addNewProduct, updateProduct } = useStore();
+export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: ItemModalProps) {
+  const { categories, finishedProducts, addNewMaterial, updateMaterial, updateProduct, addReadyProductStock } = useStore();
 
   const isMaterial = mode === 'material';
   const isEditing = Boolean(itemToEdit);
@@ -29,18 +30,13 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit }: ItemModalProps)
   const [categoryId, setCategoryId] = useState('');
   const [stock, setStock] = useState<number | string>(1);
   const [minStock, setMinStock] = useState<number | string>(1);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Satuan input dinamis sesuai grup kategori
+  // Satuan input dinamis sesuai grup kategori (bahan baku). Produk ready dikunci "pcs".
   const [inputUnit, setInputUnit] = useState<string>('kg');
-  const [productUnit, setProductUnit] = useState<FinishedProduct['unit']>('pcs');
 
   // Material specific: Total harga beli untuk pencatatan otomatis keuangan
   const [totalCost, setTotalCost] = useState<number | string>('');
-
-  // Product specific
-  const [sellingPrice, setSellingPrice] = useState<number | string>(12000);
-  const [costPrice, setCostPrice] = useState<number | string>(6500);
-  const [batchYield, setBatchYield] = useState<number | string>(20);
 
   const currentCategory = categories.find((c) => c.id === categoryId) || availableCategories[0];
   const unitGroup: UnitGroupType = isMaterial ? getCategoryUnitGroup(currentCategory) : 'count';
@@ -48,11 +44,12 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit }: ItemModalProps)
   const availableUnits = groupConfig.units;
 
   useEffect(() => {
+    setErrorMsg(null);
     if (itemToEdit) {
       setName(itemToEdit.name);
       setCategoryId(itemToEdit.categoryId);
       setStock(itemToEdit.stock);
-      setMinStock(itemToEdit.minStock);
+      setMinStock(isMaterial ? itemToEdit.minStock : 5);
 
       if ('costPerUnit' in itemToEdit) {
         const cat = categories.find((c) => c.id === itemToEdit.categoryId);
@@ -62,26 +59,17 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit }: ItemModalProps)
         setInputUnit(matched ? matched.id : validUnits[0].id);
         setTotalCost(Math.round(itemToEdit.costPerUnit * itemToEdit.stock) || '');
       }
-      if ('sellingPrice' in itemToEdit) {
-        setProductUnit(itemToEdit.unit as FinishedProduct['unit']);
-        setSellingPrice(itemToEdit.sellingPrice);
-        setCostPrice(itemToEdit.costPrice);
-        setBatchYield(itemToEdit.batchYield);
-      }
     } else {
       const initialCat = availableCategories[0];
       const initialGroup = isMaterial ? getCategoryUnitGroup(initialCat) : 'count';
       setName('');
       setCategoryId(initialCat?.id || '');
-      setStock(isMaterial ? 1 : 20);
+      setStock(isMaterial ? 1 : '');
       setMinStock(isMaterial ? 1 : 5);
       setInputUnit(UNIT_GROUP_CONFIG[initialGroup].units[0].id);
-      setProductUnit('pcs');
       setTotalCost('');
-      setSellingPrice(10000);
-      setCostPrice(5000);
-      setBatchYield(20);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemToEdit, isOpen, mode]);
 
   if (!isOpen) return null;
@@ -105,16 +93,27 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit }: ItemModalProps)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    const catObj = categories.find((c) => c.id === categoryId) || availableCategories[0];
+    setErrorMsg(null);
+    const catObj = availableCategories.find((c) => c.id === categoryId) || availableCategories[0];
     const categoryName = catObj ? catObj.name : (isMaterial ? 'Tepung & Gandum' : 'Roti Manis');
 
     if (isMaterial) {
+      if (!name.trim()) {
+        setErrorMsg('Nama merek atau jenis bahan baku wajib diisi (contoh: Tepung Segitiga Biru).');
+        return;
+      }
+      const parsedStock = Number(stock);
+      if (isNaN(parsedStock) || parsedStock <= 0) {
+        setErrorMsg('Jumlah stok bahan harus angka lebih dari 0.');
+        return;
+      }
+
       const parsedTotalCost = Number(totalCost) || 0;
       const calculatedCostPerUnit = finalStock > 0 ? Math.round(parsedTotalCost / finalStock) : 0;
 
       if (isEditing && itemToEdit) {
         updateMaterial(itemToEdit.id, {
-          name: name.trim() || categoryName,
+          name: name.trim(),
           category: categoryName,
           categoryId: catObj?.id || categoryId,
           stock: finalStock,
@@ -125,7 +124,7 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit }: ItemModalProps)
       } else {
         addNewMaterial(
           {
-            name: name.trim() || categoryName,
+            name: name.trim(),
             category: categoryName,
             categoryId: catObj?.id || categoryId,
             stock: finalStock,
@@ -137,36 +136,49 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit }: ItemModalProps)
         );
       }
     } else {
-      if (!name.trim()) return;
+      // ===== PRODUK READY: satuan dikunci "pcs", batas warning otomatis dikunci 5 pcs =====
+      const qty = Number(stock);
+      const min = 5; // Batas warning dikunci di 5 pcs
+      if (!catObj) {
+        setErrorMsg('Belum ada kategori produk. Buat dulu di menu Kelola Kategori.');
+        return;
+      }
+      if (!name.trim()) {
+        setErrorMsg('Nama produk wajib diisi.');
+        return;
+      }
+      if (!Number.isInteger(qty) || qty < (isEditing ? 0 : 1)) {
+        setErrorMsg(isEditing ? 'Jumlah stok harus angka bulat ≥ 0.' : 'Jumlah stok harus angka bulat minimal 1 pcs.');
+        return;
+      }
+
       if (isEditing && itemToEdit) {
+        const duplicate = finishedProducts.find(
+          (p) =>
+            p.id !== itemToEdit.id &&
+            p.categoryId === catObj.id &&
+            p.name.toLowerCase().trim() === name.trim().toLowerCase()
+        );
+        if (duplicate) {
+          setErrorMsg(`Produk "${duplicate.name}" sudah ada di kategori ${catObj.name}.`);
+          return;
+        }
         updateProduct(itemToEdit.id, {
           name: name.trim(),
-          category: categoryName,
-          categoryId: catObj?.id || categoryId,
-          stock: Number(stock),
-          minStock: Number(minStock),
-          unit: productUnit,
-          sellingPrice: Number(sellingPrice),
-          costPrice: Number(costPrice),
-          batchYield: Number(batchYield),
+          category: catObj.name,
+          categoryId: catObj.id,
+          stock: qty,
+          minStock: 5,
+          unit: 'pcs',
         });
+        onSuccess?.(`Produk ${name.trim()} berhasil diperbarui.`);
       } else {
-        addNewProduct({
-          name: name.trim(),
-          category: categoryName,
-          categoryId: catObj?.id || categoryId,
-          stock: Number(stock),
-          minStock: Number(minStock),
-          unit: productUnit,
-          sellingPrice: Number(sellingPrice),
-          costPrice: Number(costPrice),
-          batchYield: Number(batchYield),
-          recipe: rawMaterials.slice(0, 3).map((m) => ({
-            materialId: m.id,
-            amount: 1,
-            unit: m.unit,
-          })),
-        });
+        const res = addReadyProductStock({ categoryId: catObj.id, name, stock: qty, minStock: 5 });
+        if (!res.success) {
+          setErrorMsg(res.message);
+          return;
+        }
+        onSuccess?.(res.message);
       }
     }
 
@@ -184,10 +196,12 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit }: ItemModalProps)
             </span>
             <div>
               <h3 className="font-black text-lg text-[#3E2723]">
-                {isEditing ? 'Ubah Rincian Item' : isMaterial ? 'Tambah Stok Bahan Baku' : 'Tambah Varian Roti'}
+                {isEditing
+                  ? isMaterial ? 'Ubah Rincian Bahan' : 'Ubah Produk Ready'
+                  : isMaterial ? 'Tambah Stok Bahan Baku' : 'Input Stok Produk Ready'}
               </h3>
               <p className="text-xs text-[#8D6E63] font-medium">
-                {isMaterial ? 'Catat belanja bahan dapur & simpan pengeluaran kas' : 'Tambah ke daftar etalase Dapoer Mamak'}
+                {isMaterial ? 'Catat belanja bahan dapur & simpan pengeluaran kas' : 'Stok keluar otomatis saat transaksi di Keuangan Toko'}
               </p>
             </div>
           </div>
@@ -204,66 +218,75 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit }: ItemModalProps)
           {/* Pilihan Kategori */}
           <div>
             <label className="block text-xs font-black text-[#3E2723] mb-1.5">
-              Pilihan Kategori {isMaterial ? 'Bahan Baku' : 'Roti'}
+              Pilihan Kategori {isMaterial ? 'Bahan Baku' : 'Produk'}
             </label>
-            <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto p-1 bg-[#FAF7F2] rounded-2xl border border-[#EFE4DA]">
-              {availableCategories.map((c) => {
-                const isSelected = categoryId === c.id;
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => handleSelectCategory(c.id)}
-                    className={`p-2 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all ${
-                      isSelected
-                        ? 'border-[#FFB300] bg-[#FFECB3] text-[#3E2723] shadow-xs'
-                        : 'border-[#EFE4DA] bg-white text-[#6D4C41] hover:bg-white/80'
-                    }`}
-                  >
-                    <CategoryIcon name={c.iconName} className="w-4 h-4 shrink-0" />
-                    <span className="truncate">{c.name}</span>
-                  </button>
-                );
-              })}
-            </div>
+            {availableCategories.length === 0 ? (
+              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-900">
+                Belum ada kategori {isMaterial ? 'bahan baku' : 'produk'}. Tambahkan dulu lewat menu{' '}
+                <strong>Kelola Kategori</strong>.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto p-1 bg-[#FAF7F2] rounded-2xl border border-[#EFE4DA]">
+                {availableCategories.map((c) => {
+                  const isSelected = categoryId === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => handleSelectCategory(c.id)}
+                      className={`p-2 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all ${isSelected
+                          ? 'border-[#FFB300] bg-[#FFECB3] text-[#3E2723] shadow-xs'
+                          : 'border-[#EFE4DA] bg-white text-[#6D4C41] hover:bg-white/80'
+                        }`}
+                    >
+                      <CategoryIcon name={c.iconName} className="w-4 h-4 shrink-0" />
+                      <span className="truncate">{c.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Nama Merek / Barang */}
           <div>
-            <label className="block text-xs font-black text-[#3E2723] mb-1.5">
-              {isMaterial ? 'Nama Merek / Bahan (Opsional)' : 'Nama Varian Roti'}
+            <label className="block text-xs font-black text-[#3E2723] mb-1.5 flex items-center justify-between">
+              <span>{isMaterial ? 'Nama Merek / Bahan' : 'Nama Produk'} <span className="text-rose-600">*</span></span>
+              {isMaterial && (
+                <span className="text-[10px] text-[#8D6E63] font-medium">Misal: Cakra Kembar, Segitiga Biru, Gulaku</span>
+              )}
             </label>
             <input
               type="text"
-              required={!isMaterial}
+              required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={isMaterial ? 'Contoh: Tepung Cakra Kembar, Ragi Saf-Instant' : 'Contoh: Roti Sisir Pandan Keju'}
+              placeholder={isMaterial ? 'Contoh: Tepung Segitiga Biru, Ragi Saf-Instant' : 'Contoh: Roti Coklat Keju'}
               className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-4 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none placeholder-[#A1887F]"
             />
           </div>
 
           {/* Stok Awal & Satuan */}
-          <div className="space-y-1.5">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-black text-[#3E2723] mb-1">
-                  {isMaterial ? 'Jumlah Stok' : 'Jumlah Stok'}
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={stock}
-                  onChange={(e) => setStock(e.target.value)}
-                  className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-3 py-2 text-xs text-[#3E2723] font-bold focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-black text-[#3E2723] mb-1">
-                  Satuan Ukuran
-                </label>
-                {isMaterial ? (
+          {isMaterial ? (
+            <div className="space-y-1.5">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-black text-[#3E2723] mb-1">
+                    Jumlah Stok
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={stock}
+                    onChange={(e) => setStock(e.target.value)}
+                    className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-3 py-2 text-xs text-[#3E2723] font-bold focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-[#3E2723] mb-1">
+                    Satuan Ukuran
+                  </label>
                   <select
                     value={inputUnit}
                     onChange={(e) => setInputUnit(e.target.value)}
@@ -275,30 +298,53 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit }: ItemModalProps)
                       </option>
                     ))}
                   </select>
-                ) : (
-                  <select
-                    value={productUnit}
-                    onChange={(e) => setProductUnit(e.target.value as FinishedProduct['unit'])}
-                    className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-3 py-2 text-xs text-[#3E2723] font-bold focus:outline-none"
-                  >
-                    <option value="pcs">pcs</option>
-                    <option value="box">box</option>
-                    <option value="loyang">loyang</option>
-                  </select>
-                )}
+                </div>
               </div>
-            </div>
 
-            {/* Konversi Pintar Gram -> Kg / Ml -> Liter */}
-            {isMaterial && (
+              {/* Konversi Pintar Gram -> Kg / Ml -> Liter */}
               <div className="flex items-center justify-between text-[10px] text-[#8D6E63] font-semibold px-1">
                 <span>Basis Satuan: <strong className="text-[#3E2723]">{groupConfig.label} ({groupConfig.desc})</strong></span>
                 <span className="bg-[#FFF3E0] text-[#E65100] px-2 py-0.5 rounded-full font-bold border border-[#FFE0B2]">
                   Pilihan: {inputUnit}
                 </span>
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            /* Produk Ready: Jumlah + satuan "pcs" terkunci (Batas warning otomatis terkunci di 5 pcs) */
+            <div className="space-y-1.5">
+              <div>
+                <label htmlFor="ready-product-qty" className="block text-xs font-black text-[#3E2723] mb-1">
+                  {isEditing ? 'Jumlah Stok Saat Ini' : 'Jumlah Stok Masuk'}
+                </label>
+                <div className="flex items-stretch rounded-2xl border-2 border-[#EFE4DA] focus-within:border-[#FFB300] bg-[#FAF7F2] overflow-hidden">
+                  <input
+                    id="ready-product-qty"
+                    type="number"
+                    inputMode="numeric"
+                    min={isEditing ? 0 : 1}
+                    step="1"
+                    required
+                    value={stock}
+                    onChange={(e) => setStock(e.target.value)}
+                    placeholder="0"
+                    className="flex-1 min-w-0 bg-transparent px-3 py-2 text-xs text-[#3E2723] font-bold focus:outline-none"
+                  />
+                  <span
+                    className="px-3 flex items-center gap-1 bg-[#3E2723] text-[#FFB300] text-[11px] font-black select-none"
+                    title="Satuan produk ready dikunci pcs"
+                  >
+                    <Lock className="w-3 h-3" />
+                    pcs
+                  </span>
+                </div>
+              </div>
+              <p className="text-[10px] text-[#8D6E63] font-medium">
+                {isEditing
+                  ? '💡 Ubah angka stok jika ingin mengoreksi jumlah fisik di etalase.'
+                  : '💡 Jika produk dengan nama & kategori yang sama sudah ada, stok akan ditambahkan ke produk tersebut.'}
+              </p>
+            </div>
+          )}
 
           {/* Kolom Total Biaya Belanja (Khusus Bahan Baku) */}
           {isMaterial && (
@@ -328,35 +374,11 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit }: ItemModalProps)
             </div>
           )}
 
-          {/* Kolom Khusus Produk Roti (jika mode produk) */}
-          {!isMaterial && (
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <div>
-                <label className="block text-xs font-black text-[#3E2723] mb-1">
-                  Harga Jual (Rp)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="500"
-                  value={sellingPrice}
-                  onChange={(e) => setSellingPrice(e.target.value)}
-                  className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-3 py-2 text-xs text-[#3E2723] font-bold focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-black text-[#3E2723] mb-1">
-                  Estimasi Modal (Rp)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="500"
-                  value={costPrice}
-                  onChange={(e) => setCostPrice(e.target.value)}
-                  className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-3 py-2 text-xs text-[#3E2723] font-bold focus:outline-none"
-                />
-              </div>
+          {/* Pesan Validasi */}
+          {errorMsg && (
+            <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{errorMsg}</span>
             </div>
           )}
 

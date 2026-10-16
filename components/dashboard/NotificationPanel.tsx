@@ -14,7 +14,10 @@ export function NotificationPanel() {
   const { rawMaterials, finishedProducts, notifications } = useStore();
 
   const lowMaterials = rawMaterials.filter((m) => m.stock <= m.minStock);
-  const lowProducts = finishedProducts.filter((p) => p.stock <= p.minStock);
+  // Pisahkan produk: stok habis (0 pcs) vs hampir habis (>0, ≤ minStock)
+  const outOfStockProducts = finishedProducts.filter((p) => p.stock <= 0);
+  const lowStockProducts = finishedProducts.filter((p) => p.stock > 0 && p.stock <= p.minStock);
+  const totalAlerts = lowMaterials.length + outOfStockProducts.length + lowStockProducts.length;
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -30,17 +33,76 @@ export function NotificationPanel() {
             <span className="p-1.5 sm:p-2 rounded-xl sm:rounded-2xl bg-[#FCE4EC] text-[#D81B60] border border-[#F8BBD0]">
               <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
             </span>
-            <h3 className="font-black text-xs sm:text-sm text-[#3E2723]">Peringatan Stok Menipis</h3>
+            <h3 className="font-black text-xs sm:text-sm text-[#3E2723]">Peringatan Stok</h3>
           </div>
           <span className="text-[10px] sm:text-[11px] font-black px-2 sm:px-2.5 py-0.5 rounded-full bg-[#FCE4EC] text-[#D81B60] border border-[#F8BBD0]">
-            {lowMaterials.length + lowProducts.length} Kritis
+            {totalAlerts} Kritis
           </span>
         </div>
 
         <div className="mt-3 sm:mt-4 space-y-2.5 sm:space-y-3">
-          {/* Low Raw Materials */}
-          {lowMaterials.length > 0 && (
+          {/* 🔴 Produk Stok Habis (0 pcs) — Selalu muncul */}
+          {outOfStockProducts.length > 0 && (
             <div className="space-y-1.5 sm:space-y-2">
+              <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-rose-700 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
+                Stok Habis (0 pcs):
+              </p>
+              {outOfStockProducts.map((prod) => (
+                <div
+                  key={prod.id}
+                  className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-rose-50 to-rose-100/70 border border-rose-300 flex items-center justify-between text-xs"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-pulse shrink-0" />
+                    <div className="min-w-0">
+                      <p className="font-black text-[#3E2723] text-xs truncate">{prod.name}</p>
+                      <p className="text-[10px] sm:text-[11px] text-rose-600 font-bold">{prod.category}</p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-xs font-black text-rose-700">
+                      0 {prod.unit}
+                    </span>
+                    <p className="text-[9px] sm:text-[10px] text-rose-500 font-bold">HABIS</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 🟡 Produk Hampir Habis (>0, ≤ minStock) */}
+          {lowStockProducts.length > 0 && (
+            <div className="space-y-1.5 sm:space-y-2 pt-1">
+              <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-amber-700 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                Etalase Hampir Habis:
+              </p>
+              {lowStockProducts.map((prod) => (
+                <div
+                  key={prod.id}
+                  className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-[#FFF8E1] border border-[#FFE082] flex items-center justify-between text-xs gap-2"
+                >
+                  <div className="min-w-0">
+                    <p className="font-black text-[#3E2723] text-xs truncate">{prod.name}</p>
+                    <p className="text-[10px] sm:text-[11px] text-[#6D4C41]">
+                      Min. {prod.minStock} {prod.unit}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-xs font-black text-[#E65100]">
+                      {prod.stock} {prod.unit}
+                    </span>
+                    <p className="text-[9px] sm:text-[10px] text-amber-600 font-bold">Menipis</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 🔴 Bahan Baku Perlu Restock */}
+          {lowMaterials.length > 0 && (
+            <div className="space-y-1.5 sm:space-y-2 pt-1">
               <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-[#8D6E63]">
                 Bahan Perlu Restock:
               </p>
@@ -69,34 +131,9 @@ export function NotificationPanel() {
             </div>
           )}
 
-          {/* Low Ready Products */}
-          {lowProducts.length > 0 && (
-            <div className="space-y-1.5 sm:space-y-2 pt-1">
-              <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-[#8D6E63]">
-                Etalase Hampir Habis:
-              </p>
-              {lowProducts.map((prod) => (
-                <div
-                  key={prod.id}
-                  className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-[#FFF8E1] border border-[#FFE082] flex items-center justify-between text-xs gap-2"
-                >
-                  <div className="min-w-0">
-                    <p className="font-black text-[#3E2723] text-xs truncate">{prod.name}</p>
-                    <p className="text-[10px] sm:text-[11px] text-[#6D4C41]">
-                      Sisa {prod.stock} {prod.unit}
-                    </p>
-                  </div>
-                  <span className="text-xs font-black text-[#E65100]">
-                    {prod.stock} {prod.unit}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {lowMaterials.length === 0 && lowProducts.length === 0 && (
+          {totalAlerts === 0 && (
             <div className="p-3 sm:p-4 text-center text-xs text-[#8D6E63]">
-              Semua bahan baku dan roti di etalase dalam batas aman.
+              Semua bahan baku dan produk di etalase dalam batas aman.
             </div>
           )}
         </div>

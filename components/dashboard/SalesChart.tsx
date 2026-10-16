@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
-import { ShoppingBag, Boxes, Calendar, PieChart as PieIcon, PackageCheck, AlertCircle } from 'lucide-react';
+import { ShoppingBag, Boxes, Calendar, PackageCheck, AlertCircle, Sparkles } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { formatRupiah, formatNumber, getCategoryUnitGroup, UNIT_GROUP_CONFIG, UnitGroupType } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -23,7 +23,7 @@ const WARM_BAKERY_COLORS = [
   '#795548', // Toasted Wheat
 ];
 
-type ChartType = 'sales' | 'inventory';
+type ChartType = 'sales' | 'materials' | 'products';
 type TimeRange = 'daily' | 'weekly' | 'monthly' | 'all';
 type InventoryDimension = 'all' | 'weight' | 'volume' | 'count';
 
@@ -71,7 +71,6 @@ export function SalesChart() {
     const map = new Map<string, { value: number; count: number; category: string }>();
 
     filtered.forEach((trx) => {
-      // Find if transaction description mentions any of our finished products
       const matchedProd = finishedProducts.find((p) =>
         trx.description.toLowerCase().includes(p.name.toLowerCase())
       );
@@ -85,7 +84,6 @@ export function SalesChart() {
       map.set(label, current);
     });
 
-    // If transactions exist but didn't fall into strict today/7d (e.g. demo dates), fallback gracefully
     if (map.size === 0 && filtered.length === 0 && incomeTransactions.length > 0 && timeRange !== 'daily') {
       incomeTransactions.forEach((trx) => {
         const matchedProd = finishedProducts.find((p) =>
@@ -117,18 +115,20 @@ export function SalesChart() {
   }, [chartType, transactions, timeRange, finishedProducts]);
 
   // -------------------------------------------------------------
-  // 2. DATA SLICE FOR INVENTORY STOCK (PERSEDIAAN STOK FISIK PER KATEGORI)
+  // 2. DATA SLICE FOR BAHAN BAKU (READY SAJA, STOK > 0)
   // -------------------------------------------------------------
-  const inventoryPieData = useMemo(() => {
-    if (chartType !== 'inventory') return [];
+  const materialsPieData = useMemo(() => {
+    if (chartType !== 'materials') return [];
 
-    // Kelompokkan data bahan baku berdasarkan KATEGORI BAHAN BAKU & GRUP SATUAN
+    // Filter HANYA bahan baku yang READY (stok > 0), batalkan yang habis
+    const readyMaterials = rawMaterials.filter((m) => Number(m.stock) > 0);
+
     const categoryMap = new Map<
       string,
       { totalStock: number; totalCostValue: number; itemCount: number; unitGroup: UnitGroupType; unitDisplay: string }
     >();
 
-    rawMaterials.forEach((m) => {
+    readyMaterials.forEach((m) => {
       const catName = m.category || 'Bahan Baku Lainnya';
       const catObj = categories.find(
         (c) => c.id === m.categoryId || c.name.toLowerCase().trim() === catName.toLowerCase().trim()
@@ -137,7 +137,6 @@ export function SalesChart() {
       const groupConfig = UNIT_GROUP_CONFIG[group];
       const baseUnit = group === 'count' ? (m.unit || 'pcs') : groupConfig.baseUnit;
 
-      // Filter dimensi jika dipilih
       if (inventoryDimension !== 'all' && group !== inventoryDimension) {
         return;
       }
@@ -172,186 +171,238 @@ export function SalesChart() {
     return items;
   }, [chartType, rawMaterials, categories, inventoryDimension]);
 
+  // -------------------------------------------------------------
+  // 3. DATA SLICE FOR PRODUK JADI (READY SAJA, STOK > 0)
+  // -------------------------------------------------------------
+  const productsPieData = useMemo(() => {
+    if (chartType !== 'products') return [];
+
+    // Filter HANYA produk jadi yang READY (stok > 0), batalkan yang habis
+    const readyProducts = finishedProducts.filter((p) => Number(p.stock) > 0);
+
+    const items = readyProducts
+      .map((p, idx) => ({
+        id: `prod-${p.id}`,
+        name: p.name,
+        category: p.category,
+        value: Number(p.stock) || 0,
+        unitDisplay: p.unit || 'pcs',
+        color: WARM_BAKERY_COLORS[idx % WARM_BAKERY_COLORS.length],
+      }))
+      .sort((a, b) => b.value - a.value);
+
+    return items;
+  }, [chartType, finishedProducts]);
+
   // Active chart data
-  const activePieData = chartType === 'sales' ? salesPieData : inventoryPieData;
+  const activePieData =
+    chartType === 'sales'
+      ? salesPieData
+      : chartType === 'materials'
+      ? materialsPieData
+      : productsPieData;
+
   const totalValuation = activePieData.reduce((sum, item) => sum + item.value, 0);
 
   if (!mounted) {
     return (
-      <div className="w-full h-80 rounded-2xl bg-white border border-[#EFE4DA] animate-pulse flex items-center justify-center text-xs text-[#8D6E63]">
-        Memuat Grafik Proporsi...
+      <div className="p-4 sm:p-5 rounded-2xl bg-white/90 border border-[#EFE4DA] h-72 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-6 w-6 border-2 border-[#FFB300] border-t-transparent" />
       </div>
     );
   }
 
   return (
-    <div className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white border-1.5 border-[#EFE4DA] text-[#3E2723] shadow-xs sm:shadow-sm relative overflow-hidden">
-      {/* Decorative Warm Ambient Glow */}
-      <div className="absolute top-0 right-0 w-48 h-48 bg-[#FFF3E0]/70 rounded-full blur-2xl pointer-events-none" />
+    <div className="p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/92 backdrop-blur-md border-1.5 sm:border-2 border-[#EFE4DA] shadow-xs sm:shadow-md shadow-[#3E2723]/5 space-y-3">
+      {/* Header with Title and 3 Tab Buttons */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-[#EFE4DA]">
+        <div className="flex items-center gap-2">
+          <span className="p-1.5 rounded-xl bg-amber-100 text-amber-900 border border-amber-200 shadow-2xs">
+            {chartType === 'sales' ? (
+              <ShoppingBag className="w-4 h-4 text-[#E65100]" />
+            ) : chartType === 'materials' ? (
+              <Boxes className="w-4 h-4 text-[#FFB300]" />
+            ) : (
+              <Sparkles className="w-4 h-4 text-[#2E7D32]" />
+            )}
+          </span>
+          <div>
+            <h3 className="text-xs sm:text-sm font-black text-[#3E2723]">
+              {chartType === 'sales'
+                ? 'Proporsi Penjualan Toko'
+                : chartType === 'materials'
+                ? 'Proporsi Bahan Baku Ready'
+                : 'Proporsi Stok Produk Ready'}
+            </h3>
+            <p className="text-[10px] text-[#8D6E63] font-medium hidden sm:block">
+              {chartType === 'sales'
+                ? 'Distribusi omset penjualan terkelompok per varian produk'
+                : chartType === 'materials'
+                ? 'Hanya menampilkan persediaan bahan baku dapur yang ready (stok > 0)'
+                : 'Hanya menampilkan persediaan produk jadi ready siap jual (stok > 0)'}
+            </p>
+          </div>
+        </div>
 
-      {/* Header Controls: Title + Mode Filter + Time Filter */}
-      <div className="flex flex-col gap-2.5 pb-3 border-b border-[#EFE4DA] relative z-10">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          {/* Title with Bakery Icon */}
-          <div className="flex items-center gap-2">
-            <span className="p-1.5 rounded-xl bg-[#FFF3E0] text-[#3E2723] border border-[#FFE0B2]">
-              <PieIcon className="w-4 h-4 text-[#E65100]" />
+        {/* 3 Tab Filter Buttons: 1. Penjualan | 2. Bahan Baku | 3. Produk */}
+        <div className="flex items-center p-0.5 bg-[#FAF7F2] rounded-xl border border-[#EFE4DA] self-start sm:self-auto shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setChartType('sales')}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all',
+              chartType === 'sales'
+                ? 'bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] shadow-xs'
+                : 'text-[#6D4C41] hover:text-[#3E2723]'
+            )}
+          >
+            <ShoppingBag className="w-3.5 h-3.5" />
+            <span>Penjualan</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setChartType('materials')}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all',
+              chartType === 'materials'
+                ? 'bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] shadow-xs'
+                : 'text-[#6D4C41] hover:text-[#3E2723]'
+            )}
+          >
+            <Boxes className="w-3.5 h-3.5" />
+            <span>Bahan Baku</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setChartType('products')}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all',
+              chartType === 'products'
+                ? 'bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] shadow-xs'
+                : 'text-[#6D4C41] hover:text-[#3E2723]'
+            )}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Produk</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Sub Filters for Sales & Materials */}
+      <div className="flex items-center justify-between gap-2 pt-0.5">
+        {chartType === 'sales' ? (
+          <div className="flex items-center gap-1 overflow-x-auto w-full">
+            <span className="text-[10px] font-bold text-[#8D6E63] uppercase tracking-wider mr-1 hidden sm:inline flex items-center gap-1">
+              <Calendar className="w-3 h-3 text-[#E65100]" /> Rentang:
             </span>
-            <div>
-              <h3 className="text-xs sm:text-sm font-black text-[#3E2723]">
-                {chartType === 'sales' ? 'Proporsi Penjualan Toko' : 'Proporsi Persediaan Stok'}
-              </h3>
-              <p className="text-[10px] text-[#8D6E63] font-medium hidden sm:block">
-                {chartType === 'sales'
-                  ? 'Distribusi omset penjualan terkelompok per varian produk'
-                  : 'Distribusi nilai kapital persediaan bahan & etalase roti'}
-              </p>
-            </div>
-          </div>
-
-          {/* Primary Filter: Penjualan vs Persediaan Stok */}
-          <div className="flex items-center p-0.5 bg-[#FAF7F2] rounded-xl border border-[#EFE4DA] self-start sm:self-auto shadow-2xs">
             <button
               type="button"
-              onClick={() => setChartType('sales')}
+              onClick={() => setTimeRange('daily')}
               className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all',
-                chartType === 'sales'
-                  ? 'bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] shadow-xs'
-                  : 'text-[#6D4C41] hover:text-[#3E2723]'
+                'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
+                timeRange === 'daily'
+                  ? 'bg-[#3E2723] text-white shadow-2xs'
+                  : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
               )}
             >
-              <ShoppingBag className="w-3.5 h-3.5" />
-              <span>Penjualan</span>
+              Hari Ini
             </button>
             <button
               type="button"
-              onClick={() => setChartType('inventory')}
+              onClick={() => setTimeRange('weekly')}
               className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all',
-                chartType === 'inventory'
-                  ? 'bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] shadow-xs'
-                  : 'text-[#6D4C41] hover:text-[#3E2723]'
+                'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
+                timeRange === 'weekly'
+                  ? 'bg-[#3E2723] text-white shadow-2xs'
+                  : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
               )}
             >
-              <Boxes className="w-3.5 h-3.5" />
-              <span>Stok Gudang</span>
+              7 Hari
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimeRange('monthly')}
+              className={cn(
+                'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
+                timeRange === 'monthly'
+                  ? 'bg-[#3E2723] text-white shadow-2xs'
+                  : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
+              )}
+            >
+              30 Hari
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimeRange('all')}
+              className={cn(
+                'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
+                timeRange === 'all'
+                  ? 'bg-[#3E2723] text-white shadow-2xs'
+                  : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
+              )}
+            >
+              Semua Riwayat
             </button>
           </div>
-        </div>
-
-        {/* Secondary Filter: Time Range (for Sales) OR Target Selector (for Inventory) */}
-        <div className="flex items-center justify-between gap-2 pt-0.5">
-          {chartType === 'sales' ? (
-            <div className="flex items-center gap-1 overflow-x-auto w-full">
-              <span className="text-[10px] font-bold text-[#8D6E63] uppercase tracking-wider mr-1 hidden sm:inline flex items-center gap-1">
-                <Calendar className="w-3 h-3 text-[#E65100]" /> Rentang:
-              </span>
-              <button
-                type="button"
-                onClick={() => setTimeRange('daily')}
-                className={cn(
-                  'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
-                  timeRange === 'daily'
-                    ? 'bg-[#3E2723] text-white shadow-2xs'
-                    : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
-                )}
-              >
-                Hari Ini
-              </button>
-              <button
-                type="button"
-                onClick={() => setTimeRange('weekly')}
-                className={cn(
-                  'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
-                  timeRange === 'weekly'
-                    ? 'bg-[#3E2723] text-white shadow-2xs'
-                    : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
-                )}
-              >
-                7 Hari
-              </button>
-              <button
-                type="button"
-                onClick={() => setTimeRange('monthly')}
-                className={cn(
-                  'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
-                  timeRange === 'monthly'
-                    ? 'bg-[#3E2723] text-white shadow-2xs'
-                    : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
-                )}
-              >
-                30 Hari
-              </button>
-              <button
-                type="button"
-                onClick={() => setTimeRange('all')}
-                className={cn(
-                  'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
-                  timeRange === 'all'
-                    ? 'bg-[#3E2723] text-white shadow-2xs'
-                    : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
-                )}
-              >
-                Semua Riwayat
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1 overflow-x-auto w-full">
-              <span className="text-[10px] font-bold text-[#8D6E63] uppercase tracking-wider mr-1 hidden sm:inline flex items-center gap-1">
-                <PackageCheck className="w-3 h-3 text-[#2E7D32]" /> Dimensi:
-              </span>
-              <button
-                type="button"
-                onClick={() => setInventoryDimension('all')}
-                className={cn(
-                  'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
-                  inventoryDimension === 'all'
-                    ? 'bg-[#3E2723] text-white shadow-2xs'
-                    : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
-                )}
-              >
-                Semua Grup
-              </button>
-              <button
-                type="button"
-                onClick={() => setInventoryDimension('weight')}
-                className={cn(
-                  'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
-                  inventoryDimension === 'weight'
-                    ? 'bg-[#3E2723] text-white shadow-2xs'
-                    : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
-                )}
-              >
-                Berat (kg)
-              </button>
-              <button
-                type="button"
-                onClick={() => setInventoryDimension('volume')}
-                className={cn(
-                  'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
-                  inventoryDimension === 'volume'
-                    ? 'bg-[#3E2723] text-white shadow-2xs'
-                    : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
-                )}
-              >
-                Volume (L)
-              </button>
-              <button
-                type="button"
-                onClick={() => setInventoryDimension('count')}
-                className={cn(
-                  'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
-                  inventoryDimension === 'count'
-                    ? 'bg-[#3E2723] text-white shadow-2xs'
-                    : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
-                )}
-              >
-                Unit / Pcs
-              </button>
-            </div>
-          )}
-        </div>
+        ) : chartType === 'materials' ? (
+          <div className="flex items-center gap-1 overflow-x-auto w-full">
+            <span className="text-[10px] font-bold text-[#8D6E63] uppercase tracking-wider mr-1 hidden sm:inline flex items-center gap-1">
+              <PackageCheck className="w-3 h-3 text-[#2E7D32]" /> Dimensi:
+            </span>
+            <button
+              type="button"
+              onClick={() => setInventoryDimension('all')}
+              className={cn(
+                'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
+                inventoryDimension === 'all'
+                  ? 'bg-[#3E2723] text-white shadow-2xs'
+                  : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
+              )}
+            >
+              Semua Grup
+            </button>
+            <button
+              type="button"
+              onClick={() => setInventoryDimension('weight')}
+              className={cn(
+                'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
+                inventoryDimension === 'weight'
+                  ? 'bg-[#3E2723] text-white shadow-2xs'
+                  : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
+              )}
+            >
+              Berat (kg)
+            </button>
+            <button
+              type="button"
+              onClick={() => setInventoryDimension('volume')}
+              className={cn(
+                'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
+                inventoryDimension === 'volume'
+                  ? 'bg-[#3E2723] text-white shadow-2xs'
+                  : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
+              )}
+            >
+              Volume (L)
+            </button>
+            <button
+              type="button"
+              onClick={() => setInventoryDimension('count')}
+              className={cn(
+                'px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all shrink-0',
+                inventoryDimension === 'count'
+                  ? 'bg-[#3E2723] text-white shadow-2xs'
+                  : 'bg-[#FAF7F2] text-[#6D4C41] border border-[#EFE4DA] hover:bg-[#FFF3E0]'
+              )}
+            >
+              Unit / Pcs
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 text-xs text-[#8D6E63] font-medium">
+            <span>Menampilkan seluruh stok etalase produk jadi yang tersedia.</span>
+          </div>
+        )}
       </div>
 
       {/* Donut Chart Content Area */}
@@ -360,11 +411,13 @@ export function SalesChart() {
           <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center">
             <AlertCircle className="w-6 h-6 text-amber-600" />
           </div>
-          <p className="font-black text-sm text-[#3E2723]">Belum Ada Data untuk Filter Ini</p>
+          <p className="font-black text-sm text-[#3E2723]">Belum Ada Data Barang Ready</p>
           <p className="text-xs text-[#8D6E63] max-w-xs">
             {chartType === 'sales'
-              ? 'Belum ada transaksi penjualan pada rentang waktu yang dipilih. Catat kas masuk kasir untuk melihat grafik.'
-              : 'Belum ada data stok tersisa pada dimensi kategori ini.'}
+              ? 'Belum ada transaksi penjualan pada rentang waktu yang dipilih.'
+              : chartType === 'materials'
+              ? 'Tidak ada bahan baku yang berstatus ready (stok > 0).'
+              : 'Tidak ada produk jadi yang berstatus ready (stok > 0).'}
           </p>
         </div>
       ) : (
@@ -426,13 +479,15 @@ export function SalesChart() {
             {/* Inner Center Label for Donut */}
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-4">
               <span className="text-[9px] font-bold text-[#8D6E63] uppercase tracking-wider">
-                {chartType === 'sales' ? 'Total Omset' : 'Total Stok'}
+                {chartType === 'sales' ? 'Total Omset' : 'Total Stok Ready'}
               </span>
               <span className="text-xs sm:text-sm font-black text-[#3E2723] leading-tight truncate max-w-[130px]">
                 {chartType === 'sales'
                   ? formatRupiah(totalValuation)
                   : `${formatNumber(totalValuation)} ${
-                      inventoryDimension === 'weight'
+                      chartType === 'products'
+                        ? 'pcs'
+                        : inventoryDimension === 'weight'
                         ? 'kg'
                         : inventoryDimension === 'volume'
                         ? 'L'
@@ -442,7 +497,7 @@ export function SalesChart() {
                     }`}
               </span>
               <span className="text-[8.5px] text-[#D81B60] font-black mt-0.5">
-                {activePieData.length} {chartType === 'sales' ? 'Varian Terjual' : 'Kategori Bahan'}
+                {activePieData.length} {chartType === 'sales' ? 'Varian Terjual' : chartType === 'materials' ? 'Kategori Bahan Ready' : 'Produk Ready'}
               </span>
             </div>
           </div>
@@ -464,7 +519,7 @@ export function SalesChart() {
                     <div className="min-w-0">
                       <p className="font-bold text-[#3E2723] truncate leading-tight">{item.name}</p>
                       <p className="text-[9.5px] text-[#8D6E63] truncate">
-                        {'itemCount' in item ? `${item.itemCount} varian bahan dapur` : item.category}
+                        {'itemCount' in item ? `${item.itemCount} varian bahan dapur ready` : item.category}
                       </p>
                     </div>
                   </div>

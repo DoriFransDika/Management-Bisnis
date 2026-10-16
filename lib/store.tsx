@@ -10,7 +10,7 @@ import {
   BusinessSummary
 } from '@/types';
 import { supabase, supabaseService } from './supabase';
-import { extractTrxMaterialRef, formatRupiah } from './utils';
+import { extractTrxMaterialRef, extractTrxProductRef, buildTrxProductRef, formatRupiah } from './utils';
 import {
   INITIAL_CATEGORIES,
   INITIAL_RAW_MATERIALS,
@@ -18,6 +18,23 @@ import {
   INITIAL_TRANSACTIONS,
   INITIAL_NOTIFICATIONS
 } from './mock-data';
+
+export interface ReadyProductInput {
+  categoryId: string;
+  name: string;
+  stock: number;
+  minStock: number;
+}
+
+export interface ProductSaleInput {
+  productId?: string;
+  qty: number;
+  amount: number;
+  category: string;
+  description: string;
+  paymentMethod: 'Tunai' | 'QRIS / Transfer';
+  quantityLabel?: string;
+}
 
 interface UserSession {
   email: string;
@@ -62,9 +79,12 @@ interface StoreContextType {
   updateProduct: (id: string, updated: Partial<FinishedProduct>) => void;
   deleteProduct: (id: string) => void;
   quickAdjustProductStock: (id: string, delta: number) => void;
+  // Produk Ready (Stok Produk Jadi) & Penjualan Terintegrasi
+  addReadyProductStock: (input: ReadyProductInput) => { success: boolean; message: string };
+  recordProductSale: (input: ProductSaleInput) => { success: boolean; message: string };
   addTransaction: (trx: Omit<Transaction, 'id'>) => void;
   deleteTransaction: (id: string) => void;
-  deleteTransactionWithSync: (id: string, syncStock?: boolean) => Promise<{ success: boolean; message: string; affectedMaterialName?: string }>;
+  deleteTransactionWithSync: (id: string, syncStock?: boolean) => Promise<{ success: boolean; message: string; affectedMaterialName?: string; affectedProductName?: string }>;
   markNotificationRead: (id: string) => void;
   resetAllData: () => void;
   // Database / Bulk Data Deletion
@@ -538,7 +558,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       type: 'income',
       category: 'Penjualan Toko',
       amount: totalRevenue,
-      description: `Penjualan ${qty} ${prod.unit} ${prod.name}`,
+      description: `Penjualan ${qty} ${prod.unit} ${prod.name} ${buildTrxProductRef(productId, qty)}`,
       paymentMethod,
       quantity: `+${qty} ${prod.unit}`,
     };
@@ -565,23 +585,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const addNewMaterial = (mat: Omit<RawMaterial, 'id' | 'updatedAt'>, totalPurchaseCost?: number) => {
     const today = new Date().toISOString().split('T')[0];
 
-    // Cek apakah sudah ada bahan baku untuk kategori ini
+    const cleanName = mat.name.trim();
+
+    // Cek apakah sudah ada bahan baku dengan NAMA MEREK yang sama persis dalam kategori ini
     const existing = rawMaterials.find(
       (m) =>
-        (mat.categoryId && m.categoryId === mat.categoryId) ||
-        m.category.toLowerCase().trim() === mat.category.toLowerCase().trim()
+        ((mat.categoryId && m.categoryId === mat.categoryId) ||
+          m.category.toLowerCase().trim() === mat.category.toLowerCase().trim()) &&
+        m.name.toLowerCase().trim() === cleanName.toLowerCase()
     );
 
     let targetMaterialId = '';
 
     if (existing) {
       targetMaterialId = existing.id;
-      // Akumulasikan stok bahan baku yang sudah ada untuk kategori ini
+      // Akumulasikan stok jika nama merek bahan baku yang sama persis sudah ada
       const updatedStock = Number((Number(existing.stock) + Number(mat.stock)).toFixed(3));
       const updated = {
         ...existing,
         stock: updatedStock,
-        name: mat.name.trim() || existing.name,
         updatedAt: today,
       };
 
@@ -593,10 +615,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         updatedAt: today,
       }).catch(console.error);
     } else {
-      // Buat entri baru jika kategori belum memiliki bahan
+      // Buat entri baru untuk merek/jenis bahan baku baru (TIDAK DITIMPA)
       targetMaterialId = `mat-${Date.now()}`;
       const newEntry: RawMaterial = {
         ...mat,
+        name: cleanName || mat.category,
         id: targetMaterialId,
         updatedAt: today,
       };
@@ -651,10 +674,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     );
     supabaseService.updateRawMaterial(target.id, { stock: newStock, updatedAt: today }).catch(console.error);
 
+    const displayName = target.name && target.name !== target.category ? `${target.name} (${target.category})` : target.category;
+
     const newNotif: ActivityNotification = {
       id: `notif-${Date.now()}`,
       type: 'expense',
-      title: `Pengurangan Stok: ${target.category}`,
+      title: `Pengurangan Stok: ${target.name || target.category}`,
       message: `Dipangkas -${amountKg} ${target.unit}. Sisa: ${newStock} ${target.unit}. Alasan: ${reason || 'Dipakai Dapur'}.`,
       time: 'Baru saja',
       severity: newStock <= target.minStock ? 'warning' : 'info',
@@ -664,7 +689,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     return {
       success: true,
-      message: `Stok ${target.category} berhasil dikurangi ${amountKg} ${target.unit}. Tersisa ${newStock} ${target.unit}.`,
+      message: `Stok ${displayName} berhasil dikurangi ${amountKg} ${target.unit}. Tersisa ${newStock} ${target.unit}.`,
     };
   };
 
@@ -766,17 +791,131 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   };
 
   const quickAdjustProductStock = (id: string, delta: number) => {
-    let newStockVal = 0;
+    const target = finishedProducts.find((p) => p.id === id);
+    if (!target) return;
+    const newStockVal = Math.max(0, target.stock + delta);
     setFinishedProducts((prev) =>
-      prev.map((p) => {
-        if (p.id === id) {
-          newStockVal = Math.max(0, p.stock + delta);
-          return { ...p, stock: newStockVal };
-        }
-        return p;
-      })
+      prev.map((p) => (p.id === id ? { ...p, stock: newStockVal } : p))
     );
     supabaseService.updateFinishedProduct(id, { stock: newStockVal }).catch(console.error);
+  };
+
+  // Input Stok Produk Ready: satuan dikunci "pcs", batas warning dikunci 5 pcs. Jika nama + kategori sama sudah ada, stok diakumulasikan.
+  const addReadyProductStock = (input: ReadyProductInput): { success: boolean; message: string } => {
+    const name = input.name.trim();
+    const qty = Math.floor(Number(input.stock));
+    const minStock = 5; // Batas warning dikunci di angka 5 pcs
+    const cat = categories.find((c) => c.id === input.categoryId && c.type === 'product');
+
+    if (!cat) return { success: false, message: 'Pilih kategori produk terlebih dahulu!' };
+    if (!name) return { success: false, message: 'Nama produk wajib diisi!' };
+    if (!Number.isFinite(qty) || qty <= 0) return { success: false, message: 'Jumlah stok harus berupa angka bulat lebih dari 0!' };
+
+    const existing = finishedProducts.find(
+      (p) => p.categoryId === cat.id && p.name.toLowerCase().trim() === name.toLowerCase()
+    );
+
+    let resultStock = qty;
+    if (existing) {
+      resultStock = existing.stock + qty;
+      const patch: Partial<FinishedProduct> = { stock: resultStock, minStock, unit: 'pcs' };
+      setFinishedProducts((prev) => prev.map((p) => (p.id === existing.id ? { ...p, ...patch } : p)));
+      supabaseService.updateFinishedProduct(existing.id, patch).catch(console.error);
+    } else {
+      const newEntry: FinishedProduct = {
+        id: `prod-${Date.now()}`,
+        name,
+        categoryId: cat.id,
+        category: cat.name,
+        stock: qty,
+        unit: 'pcs',
+        sellingPrice: 0,
+        costPrice: 0,
+        minStock,
+        batchYield: 1,
+        recipe: [],
+      };
+      setFinishedProducts((prev) => [newEntry, ...prev]);
+      supabaseService.insertFinishedProduct(newEntry).catch(console.error);
+    }
+
+    const newNotif: ActivityNotification = {
+      id: `notif-${Date.now()}`,
+      type: 'production',
+      title: `Stok Ready: +${qty} pcs ${name}`,
+      message: `${cat.name} • Total stok sekarang ${resultStock} pcs.`,
+      time: 'Baru saja',
+      severity: 'success',
+    };
+    setNotifications((prev) => [newNotif, ...prev]);
+    supabaseService.insertNotification(newNotif).catch(console.error);
+
+    return {
+      success: true,
+      message: existing
+        ? `Stok ${name} ditambah +${qty} pcs (total ${resultStock} pcs).`
+        : `Produk ${name} ditambahkan dengan stok ${qty} pcs.`,
+    };
+  };
+
+  // Transaksi penjualan dari Keuangan Toko: validasi stok lalu kurangi stok produk di Manajemen Stok.
+  const recordProductSale = (input: ProductSaleInput): { success: boolean; message: string } => {
+    const amount = Number(input.amount);
+    const description = input.description.trim();
+    if (!amount || amount <= 0) return { success: false, message: 'Nominal penjualan harus lebih dari 0!' };
+    if (!description) return { success: false, message: 'Keterangan transaksi wajib diisi!' };
+
+    const today = new Date().toISOString().split('T')[0];
+    let finalDescription = description;
+    let quantityLabel = input.quantityLabel?.trim() || undefined;
+    let successMsg = `Transaksi penjualan ${formatRupiah(amount)} berhasil dicatat!`;
+
+    if (input.productId) {
+      const prod = finishedProducts.find((p) => p.id === input.productId);
+      const qty = Math.floor(Number(input.qty));
+      if (!prod) return { success: false, message: 'Produk tidak ditemukan di Manajemen Stok!' };
+      if (!Number.isFinite(qty) || qty <= 0) return { success: false, message: 'Jumlah produk terjual harus angka bulat lebih dari 0!' };
+      if (prod.stock <= 0) return { success: false, message: `Stok ${prod.name} sudah habis (0 ${prod.unit}).` };
+      if (qty > prod.stock) {
+        return { success: false, message: `Stok ${prod.name} tidak cukup! Tersedia ${prod.stock} ${prod.unit}, diminta ${qty}.` };
+      }
+
+      const newStock = prod.stock - qty;
+      setFinishedProducts((prev) => prev.map((p) => (p.id === prod.id ? { ...p, stock: newStock } : p)));
+      supabaseService.updateFinishedProduct(prod.id, { stock: newStock }).catch(console.error);
+
+      finalDescription = `${description} ${buildTrxProductRef(prod.id, qty)}`;
+      quantityLabel = `${qty} ${prod.unit}`;
+      successMsg = `Penjualan ${prod.name} ${formatRupiah(amount)} dicatat & stok berkurang ${qty} ${prod.unit} (sisa ${newStock}).`;
+
+      if (newStock <= prod.minStock) {
+        const warnNotif: ActivityNotification = {
+          id: `notif-${Date.now()}-stk`,
+          type: 'low_stock',
+          title: newStock === 0 ? `Stok Habis: ${prod.name}` : `Stok Menipis: ${prod.name}`,
+          message: `Sisa ${newStock} ${prod.unit} setelah penjualan. Segera isi ulang.`,
+          time: 'Baru saja',
+          severity: 'warning',
+        };
+        setNotifications((prev) => [warnNotif, ...prev]);
+        supabaseService.insertNotification(warnNotif).catch(console.error);
+      }
+    }
+
+    const newTrx: Transaction = {
+      id: `trx-${Date.now()}`,
+      date: today,
+      type: 'income',
+      category: input.category || 'Penjualan Toko',
+      amount,
+      description: finalDescription,
+      paymentMethod: input.paymentMethod,
+      quantity: quantityLabel,
+    };
+    setTransactions((prev) => [newTrx, ...prev]);
+    supabaseService.insertTransaction(newTrx).catch(console.error);
+
+    return { success: true, message: successMsg };
   };
 
   const addTransaction = (trx: Omit<Transaction, 'id'>) => {
@@ -796,7 +935,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const deleteTransactionWithSync = async (
     id: string,
     syncStock: boolean = true
-  ): Promise<{ success: boolean; message: string; affectedMaterialName?: string }> => {
+  ): Promise<{ success: boolean; message: string; affectedMaterialName?: string; affectedProductName?: string }> => {
     const targetTrx = transactions.find((t) => t.id === id);
     if (!targetTrx) return { success: false, message: 'Transaksi tidak ditemukan!' };
 
@@ -836,12 +975,27 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    let affectedProductName: string | undefined;
+    if (syncStock && targetTrx.type === 'income') {
+      const prodRef = extractTrxProductRef(targetTrx.description);
+      const prod = prodRef ? finishedProducts.find((p) => p.id === prodRef.productId) : undefined;
+      if (prodRef && prod) {
+        const restored = prod.stock + prodRef.qty;
+        affectedProductName = prod.name;
+        setFinishedProducts((prev) => prev.map((p) => (p.id === prod.id ? { ...p, stock: restored } : p)));
+        await supabaseService.updateFinishedProduct(prod.id, { stock: restored }).catch(console.error);
+      }
+    }
+
     return {
       success: true,
       message: affectedMaterialName
         ? `Transaksi belanja dihapus & stok ${affectedMaterialName} telah disinkronkan otomatis.`
+        : affectedProductName
+        ? `Transaksi penjualan dihapus & stok ${affectedProductName} dikembalikan ke Manajemen Stok.`
         : 'Transaksi berhasil dihapus.',
       affectedMaterialName,
+      affectedProductName,
     };
   };
 
@@ -905,6 +1059,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         updateProduct,
         deleteProduct,
         quickAdjustProductStock,
+        addReadyProductStock,
+        recordProductSale,
         addTransaction,
         deleteTransaction,
         deleteTransactionWithSync,

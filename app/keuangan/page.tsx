@@ -27,7 +27,14 @@ import { Header } from '@/components/navigation/Header';
 import { DeleteDatabaseModal } from '@/components/common/DeleteDatabaseModal';
 import { ConfirmSyncDeleteModal } from '@/components/common/ConfirmSyncDeleteModal';
 import { TransactionModal } from '@/components/keuangan/TransactionModal';
-import { formatRupiah, cleanTrxDescription, extractTrxMaterialRef, getTransactionQuantity } from '@/lib/utils';
+import {
+  formatRupiah,
+  cleanTrxDescription,
+  extractTrxMaterialRef,
+  getTransactionQuantity,
+  getTransactionItemName,
+  extractTrxProductRef,
+} from '@/lib/utils';
 import { Transaction } from '@/types';
 
 export default function FinancePage() {
@@ -35,6 +42,7 @@ export default function FinancePage() {
     transactions,
     summary,
     finishedProducts,
+    rawMaterials,
     deleteTransaction,
     deleteTransactionWithSync,
     clearTransactionData
@@ -99,11 +107,12 @@ export default function FinancePage() {
       const matchesSearch =
         !q ||
         t.description.toLowerCase().includes(q) ||
-        t.category.toLowerCase().includes(q);
+        t.category.toLowerCase().includes(q) ||
+        getTransactionItemName(t, finishedProducts, rawMaterials).toLowerCase().includes(q);
 
       return matchesType && matchesTime && matchesSearch;
     });
-  }, [transactions, filterType, timeRange, productSearchQuery]);
+  }, [transactions, filterType, timeRange, productSearchQuery, finishedProducts, rawMaterials]);
 
   // Kalkulasi Ringkasan Dinamis Sesuai Filter
   const dynamicSummary = React.useMemo(() => {
@@ -125,7 +134,11 @@ export default function FinancePage() {
     if (!productSearchQuery.trim()) return null;
     const q = productSearchQuery.toLowerCase().trim();
     const salesTrx = filteredTransactions.filter(
-      (t) => t.type === 'income' && (t.description.toLowerCase().includes(q) || t.category.toLowerCase().includes(q))
+      (t) =>
+        t.type === 'income' &&
+        (t.description.toLowerCase().includes(q) ||
+          t.category.toLowerCase().includes(q) ||
+          getTransactionItemName(t, finishedProducts, rawMaterials).toLowerCase().includes(q))
     );
     const totalSales = salesTrx.reduce((sum, t) => sum + t.amount, 0);
     return {
@@ -133,7 +146,7 @@ export default function FinancePage() {
       count: salesTrx.length,
       totalSales,
     };
-  }, [filteredTransactions, productSearchQuery]);
+  }, [filteredTransactions, productSearchQuery, finishedProducts, rawMaterials]);
 
   // Group transactions by date for daily breakdown
   const groupedTransactions = React.useMemo(() => {
@@ -199,7 +212,9 @@ export default function FinancePage() {
         Boolean(extractTrxMaterialRef(trx.description)) ||
         trx.description.toLowerCase().includes('belanja'));
 
-    if (isMaterialExpense) {
+    const isProductSale = trx.type === 'income' && Boolean(extractTrxProductRef(trx.description));
+
+    if (isMaterialExpense || isProductSale) {
       setTrxToDeleteSync(trx);
     } else {
       if (confirm(`Hapus catatan transaksi: "${cleanTrxDescription(trx.description)}"?`)) {
@@ -555,31 +570,35 @@ export default function FinancePage() {
                       <table className="w-full text-left text-xs border-collapse">
                         <thead>
                           <tr className="border-b border-[#EFE4DA]/80 text-[10px] uppercase font-black text-[#8D6E63] bg-white/50">
-                            <th className="py-2 px-3">Keterangan</th>
-                            <th className="py-2 px-3 text-center sm:text-left w-24">Jumlah</th>
-                            <th className="py-2 px-2 text-center w-20">Jenis</th>
-                            <th className="py-2 px-3 text-right">Nominal</th>
-                            <th className="py-2 px-2 text-center w-14">Aksi</th>
+                            <th className="py-2.5 px-3 min-w-[140px]">Jenis Produk</th>
+                            <th className="py-2.5 px-3 text-center w-24">Jumlah</th>
+                            <th className="py-2.5 px-2 text-center w-24">Jenis</th>
+                            <th className="py-2.5 px-3 text-right w-32">Nominal</th>
+                            <th className="py-2.5 px-3 min-w-[150px]">Keterangan</th>
+                            <th className="py-2.5 px-2 text-center w-14">Aksi</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#EFE4DA]/60">
                           {group.items.map((trx) => {
+                            const itemName = getTransactionItemName(trx, finishedProducts, rawMaterials);
                             const qtyStr = getTransactionQuantity(trx);
+                            const cleanDesc = cleanTrxDescription(trx.description);
+
                             return (
                               <tr
                                 key={trx.id}
                                 onClick={() => setSelectedTrxForDetail(trx)}
-                                className="hover:bg-[#FFFDF9] transition-colors cursor-pointer"
+                                className="hover:bg-[#FFFDF9] transition-colors cursor-pointer group"
                               >
-                                <td className="py-2.5 px-3 min-w-0">
-                                  <p className="font-black text-[#3E2723] text-xs truncate max-w-[140px] sm:max-w-xs">
-                                    {cleanTrxDescription(trx.description)}
-                                  </p>
-                                  <p className="text-[10px] text-[#8D6E63] font-medium truncate">
-                                    {trx.category}
+                                {/* 1. Jenis Produk */}
+                                <td className="py-2.5 px-3">
+                                  <p className="font-black text-[#3E2723] text-xs truncate max-w-[170px] sm:max-w-xs" title={itemName}>
+                                    {itemName}
                                   </p>
                                 </td>
-                                <td className="py-2.5 px-3 text-center sm:text-left whitespace-nowrap">
+
+                                {/* 2. Jumlah */}
+                                <td className="py-2.5 px-3 text-center whitespace-nowrap">
                                   <span
                                     className={`inline-block text-xs font-black px-2 py-0.5 rounded-lg border ${
                                       qtyStr !== '-'
@@ -592,19 +611,23 @@ export default function FinancePage() {
                                     {qtyStr}
                                   </span>
                                 </td>
+
+                                {/* 3. Jenis */}
                                 <td className="py-2.5 px-2 text-center whitespace-nowrap">
                                   {trx.type === 'income' ? (
-                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-[#E8F5E9] text-[#2E7D32]">
-                                      <ArrowUpRight className="w-2.5 h-2.5" />
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-[#E8F5E9] text-[#2E7D32] border border-[#C8E6C9]">
+                                      <ArrowUpRight className="w-3 h-3 stroke-[2.5]" />
                                       Masuk
                                     </span>
                                   ) : (
-                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-[#FCE4EC] text-[#C2185B]">
-                                      <ArrowDownRight className="w-2.5 h-2.5" />
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-[#FCE4EC] text-[#C2185B] border border-[#F8BBD0]">
+                                      <ArrowDownRight className="w-3 h-3 stroke-[2.5]" />
                                       Keluar
                                     </span>
                                   )}
                                 </td>
+
+                                {/* 4. Nominal */}
                                 <td className="py-2.5 px-3 text-right whitespace-nowrap">
                                   <span
                                     className={`text-xs sm:text-sm font-black ${
@@ -614,6 +637,15 @@ export default function FinancePage() {
                                     {trx.type === 'income' ? '+' : '-'} {formatRupiah(trx.amount)}
                                   </span>
                                 </td>
+
+                                {/* 5. Keterangan */}
+                                <td className="py-2.5 px-3 min-w-0">
+                                  <p className="text-xs text-[#5D4037] font-medium line-clamp-1 max-w-[180px] sm:max-w-sm" title={cleanDesc}>
+                                    {cleanDesc || '-'}
+                                  </p>
+                                </td>
+
+                                {/* Aksi */}
                                 <td className="py-2.5 px-2 text-center whitespace-nowrap">
                                   <button
                                     type="button"
@@ -694,6 +726,12 @@ export default function FinancePage() {
             {/* Detailed Key-Values */}
             <div className="space-y-2.5 text-xs">
               <div className="flex justify-between py-1 border-b border-[#EFE4DA]/60">
+                <span className="text-[#8D6E63] font-medium">Jenis Produk:</span>
+                <span className="font-black text-[#3E2723] text-right max-w-[65%]">
+                  {getTransactionItemName(selectedTrxForDetail, finishedProducts, rawMaterials)}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-[#EFE4DA]/60">
                 <span className="text-[#8D6E63] font-medium">Keterangan:</span>
                 <span className="font-black text-[#3E2723] text-right max-w-[65%]">
                   {cleanTrxDescription(selectedTrxForDetail.description)}
@@ -745,10 +783,20 @@ export default function FinancePage() {
           isOpen={Boolean(trxToDeleteSync)}
           onClose={() => setTrxToDeleteSync(null)}
           onConfirm={handleConfirmDeleteSync}
-          title="Hapus Pengeluaran & Sinkronkan Stok"
+          title={
+            trxToDeleteSync.type === 'income'
+              ? 'Hapus Penjualan & Kembalikan Stok'
+              : 'Hapus Pengeluaran & Sinkronkan Stok'
+          }
           itemName={cleanTrxDescription(trxToDeleteSync.description)}
           sourceModule="Keuangan"
-          impactDescription="Catatan ini merupakan pembelian bahan baku. Menghapusnya akan otomatis menyesuaikan/mengurangi stok bahan terkait di Dapur Toko dari database Supabase."
+          impactDescription={
+            trxToDeleteSync.type === 'income'
+              ? `Catatan ini merupakan penjualan produk ready. Menghapusnya akan otomatis mengembalikan ${
+                  extractTrxProductRef(trxToDeleteSync.description)?.qty ?? 0
+                } pcs ke stok produk di Manajemen Stok.`
+              : 'Catatan ini merupakan pembelian bahan baku. Menghapusnya akan otomatis menyesuaikan/mengurangi stok bahan terkait di Dapur Toko dari database Supabase.'
+          }
           isDeleting={isDeletingSync}
         />
       )}

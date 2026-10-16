@@ -11,6 +11,8 @@ interface ReduceStockModalProps {
   onClose: () => void;
   initialCategoryId?: string;
   initialCategoryName?: string;
+  initialMaterialId?: string;
+  initialMaterialName?: string;
 }
 
 export function ReduceStockModal({
@@ -18,19 +20,22 @@ export function ReduceStockModal({
   onClose,
   initialCategoryId,
   initialCategoryName,
+  initialMaterialId,
+  initialMaterialName,
 }: ReduceStockModalProps) {
   const { categories, rawMaterials, reduceCategoryStock } = useStore();
 
   const materialCategories = categories.filter((c) => c.type === 'material');
 
   const [categoryId, setCategoryId] = useState<string>('');
+  const [materialId, setMaterialId] = useState<string>('');
   const [amount, setAmount] = useState<number | string>(1);
   const [unit, setUnit] = useState<string>('kg');
   const [reason, setReason] = useState<string>('Dipakai produksi / masak dapur');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Kunci kategori jika dibuka dari kartu kategori spesifik
-  const isLockedCategory = Boolean(initialCategoryId);
+  // Kunci kategori jika dibuka dari kartu kategori atau bahan spesifik
+  const isLockedCategory = Boolean(initialCategoryId || initialMaterialId);
 
   const currentCategory = categories.find((c) => c.id === categoryId);
   const currentCategoryName = initialCategoryName || currentCategory?.name || 'Bahan Baku';
@@ -45,22 +50,29 @@ export function ReduceStockModal({
       setAmount(1);
       const catId = initialCategoryId || materialCategories[0]?.id || '';
       setCategoryId(catId);
+      setMaterialId(initialMaterialId || '');
       const catObj = categories.find((c) => c.id === catId);
       const grp = getCategoryUnitGroup(catObj);
       setUnit(UNIT_GROUP_CONFIG[grp].units[0].id);
       setReason('Dipakai produksi / masak dapur');
     }
-  }, [isOpen, initialCategoryId]);
+  }, [isOpen, initialCategoryId, initialMaterialId]);
 
   if (!isOpen) return null;
 
-  // Cari stok yang tersedia untuk kategori ini
-  const existingMaterial = rawMaterials.find(
+  // Daftar bahan baku dalam kategori yang dipilih
+  const materialsInCat = rawMaterials.filter(
     (m) =>
       (categoryId && m.categoryId === categoryId) ||
       m.category.toLowerCase().trim() === currentCategoryName.toLowerCase().trim()
   );
-  const availableStock = existingMaterial ? Number(existingMaterial.stock) : 0;
+
+  // Bahan baku terpilih
+  const selectedMaterial =
+    rawMaterials.find((m) => m.id === materialId) ||
+    (materialsInCat.length > 0 ? materialsInCat[0] : null);
+
+  const availableStock = selectedMaterial ? Number(selectedMaterial.stock) : 0;
 
   // Konversi satuan
   const amountNum = Number(amount) || 0;
@@ -79,6 +91,7 @@ export function ReduceStockModal({
 
   const handleSelectCategory = (newCatId: string) => {
     setCategoryId(newCatId);
+    setMaterialId('');
     const newCat = categories.find((c) => c.id === newCatId);
     const newGrp = getCategoryUnitGroup(newCat);
     const newUnits = UNIT_GROUP_CONFIG[newGrp].units;
@@ -99,8 +112,10 @@ export function ReduceStockModal({
       return;
     }
 
+    const targetId = selectedMaterial?.id || categoryId || currentCategoryName;
+
     const res = reduceCategoryStock(
-      categoryId || currentCategoryName,
+      targetId,
       finalAmount,
       reason.trim()
     );
@@ -200,6 +215,31 @@ export function ReduceStockModal({
               </div>
             )}
           </div>
+
+          {/* Pilihan Merek Bahan Baku */}
+          {materialsInCat.length > 1 ? (
+            <div>
+              <label className="block text-xs font-black text-[#3E2723] mb-1.5">
+                Pilih Merek / Varian Bahan Baku
+              </label>
+              <select
+                value={selectedMaterial?.id || ''}
+                onChange={(e) => setMaterialId(e.target.value)}
+                className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-rose-400 rounded-2xl px-3.5 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none"
+              >
+                {materialsInCat.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} — Tersedia: {m.stock} {m.unit}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : selectedMaterial?.name && selectedMaterial.name !== currentCategoryName ? (
+            <div className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold flex items-center justify-between">
+              <span>Merek Bahan:</span>
+              <span className="font-black text-[#3E2723]">{selectedMaterial.name}</span>
+            </div>
+          ) : null}
 
           {/* Berat / Jumlah Pengurangan & Satuan */}
           <div className="space-y-1.5">
