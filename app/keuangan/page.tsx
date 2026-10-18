@@ -815,7 +815,8 @@ export default function FinancePage() {
         itemCountText={`${transactions.length} Catatan Transaksi Kasir & Dapur`}
         description="Tindakan ini akan mengosongkan seluruh riwayat pemasukan penjualan dan pengeluaran belanja dapur dari database Supabase dan penyimpanan lokal."
         warningNote="Seluruh catatan kas dan mutasi keuangan akan dihapus permanen. Total kas dan nominal keuntungan akan direset menjadi Rp 0."
-        confirmButtonText="Ya, Hapus Semua Transaksi dari Supabase"
+        confirmButtonText="Verifikasi & Hapus Semua Transaksi"
+        requireAuth={true}
       />
     </div>
     </AuthGuard>

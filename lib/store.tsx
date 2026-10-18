@@ -393,8 +393,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
       localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
       localStorage.removeItem(STORAGE_KEYS.NOTIFICATIONS);
-      await supabaseService.clearEntireDatabase();
-      return { success: true, message: 'Seluruh database Supabase berhasil dikosongkan!' };
+      const res = await supabaseService.clearEntireDatabase();
+      return res;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Gagal mengosongkan database';
       return { success: false, message: msg };

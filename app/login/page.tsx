@@ -159,7 +159,7 @@ export default function LoginPage() {
                   setEmail(e.target.value);
                   if (errorMsg) setErrorMsg('');
                 }}
-                placeholder="nama@email.com"
+                placeholder="dapurmamak@gmail.com"
                 className="w-full bg-white/90 border border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl pl-10 pr-4 py-3 text-xs sm:text-sm text-[#3E2723] font-bold placeholder-[#A1887F] focus:outline-none transition-colors disabled:opacity-60"
               />
             </div>

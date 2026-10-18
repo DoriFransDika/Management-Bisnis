@@ -209,7 +209,8 @@ export function SupabaseSyncButton() {
         itemCountText={`${categories.length} Kategori, ${rawMaterials.length} Bahan, ${finishedProducts.length} Produk, ${transactions.length} Transaksi`}
         description="Tindakan ini akan mengosongkan seluruh tabel di database Supabase (kategori, bahan baku, produk roti, transaksi keuangan, notifikasi) serta penyimpanan lokal."
         warningNote="PERINGATAN: Seluruh database akan dikosongkan. Anda dapat mengunggah kembali data awal dengan tombol 'Upload Data Sekarang' kapan saja."
-        confirmButtonText="Ya, Kosongkan Seluruh Database"
+        confirmButtonText="Verifikasi & Kosongkan Seluruh Database"
+        requireAuth={true}
       />
     </div>
   );

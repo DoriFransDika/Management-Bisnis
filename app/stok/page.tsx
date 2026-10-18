@@ -45,9 +45,11 @@ export default function StockPage() {
     rawMaterials,
     finishedProducts,
     categories,
+    transactions,
     deleteMaterialWithSync,
     deleteProduct,
     clearStockData,
+    clearEntireDatabase,
   } = useStore();
 
   // Tab: 'materials' (Bahan Baku Dapur) vs 'products' (Stok Produk Ready)
@@ -315,11 +317,11 @@ export default function StockPage() {
                 <button
                   type="button"
                   onClick={() => setIsClearStockOpen(true)}
-                  className="col-span-2 sm:col-span-1 justify-center px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-stone-100 hover:bg-rose-50 border border-stone-200 hover:border-rose-200 text-[#8D6E63] hover:text-rose-700 text-[11px] sm:text-xs font-black flex items-center gap-1.5 transition-all shadow-xs"
-                  title="Hapus Database Stok"
+                  className="col-span-2 sm:col-span-1 justify-center px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 hover:text-rose-800 text-[11px] sm:text-xs font-black flex items-center gap-1.5 transition-all shadow-xs"
+                  title="Hapus Seluruh Database & Riwayat"
                 >
-                  <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  <span className="truncate">Hapus Stok</span>
+                  <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-600" />
+                  <span className="truncate">Hapus Database</span>
                 </button>
               </div>
             </div>
@@ -556,18 +558,15 @@ export default function StockPage() {
         isOpen={isClearStockOpen}
         onClose={() => setIsClearStockOpen(false)}
         onConfirm={async () => {
-          const res = await clearStockData(activeTab === 'materials' ? 'materials' : 'products');
+          const res = await clearEntireDatabase();
           showToast(res.message);
         }}
-        title={`Hapus Database Stok ${activeTab === 'materials' ? 'Bahan Baku' : 'Produk Ready'}`}
-        itemCountText={
-          activeTab === 'materials'
-            ? `${rawMaterials.length} Bahan Baku`
-            : `${finishedProducts.length} Produk Ready`
-        }
-        description="Tindakan ini akan mengosongkan seluruh data persediaan dari database Supabase dan penyimpanan lokal."
-        warningNote="Semua stok akan dikosongkan permanen. Anda dapat menambahkan item baru sewaktu-waktu."
-        confirmButtonText="Ya, Hapus Semua Stok dari Supabase"
+        title="Hapus Seluruh Database & Riwayat"
+        itemCountText={`${categories.length} Kategori, ${rawMaterials.length} Bahan, ${finishedProducts.length} Produk, ${transactions.length} Transaksi`}
+        description="Tindakan ini akan mengosongkan seluruh database toko secara menyeluruh (semua bahan baku, produk roti ready, kategori, dan seluruh riwayat transaksi kas) dari database Supabase dan penyimpanan lokal."
+        warningNote="PERINGATAN: Seluruh database dan riwayat akan dihapus permanen. Verifikasi email dan kata sandi pengelola wajib dimasukkan untuk otorisasi."
+        confirmButtonText="Verifikasi & Hapus Semua Database"
+        requireAuth={true}
       />
       {materialToDeleteSync && (
         <ConfirmSyncDeleteModal

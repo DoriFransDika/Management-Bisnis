@@ -532,17 +532,32 @@ export const supabaseService = {
     return true;
   },
 
-  async clearEntireDatabase(): Promise<boolean> {
+  async clearEntireDatabase(): Promise<{ success: boolean; message: string }> {
     try {
-      await supabase.from('notifications').delete().neq('id', '');
-      await supabase.from('transactions').delete().neq('id', '');
-      await supabase.from('finished_products').delete().neq('id', '');
-      await supabase.from('raw_materials').delete().neq('id', '');
-      await supabase.from('categories').delete().neq('id', '');
-      return true;
-    } catch (e) {
+      // 1. Hapus notifikasi & riwayat aktivitas
+      const notifRes = await supabase.from('notifications').delete().neq('id', '');
+      if (notifRes.error) console.warn('[Supabase] Hapus notifikasi error:', notifRes.error.message);
+
+      // 2. Hapus seluruh riwayat transaksi keuangan
+      const trxRes = await supabase.from('transactions').delete().neq('id', '');
+      if (trxRes.error) console.warn('[Supabase] Hapus transaksi error:', trxRes.error.message);
+
+      // 3. Hapus produk ready & bahan baku (yang bergantung pada kategori)
+      const prodRes = await supabase.from('finished_products').delete().neq('id', '');
+      if (prodRes.error) console.warn('[Supabase] Hapus produk error:', prodRes.error.message);
+
+      const matRes = await supabase.from('raw_materials').delete().neq('id', '');
+      if (matRes.error) console.warn('[Supabase] Hapus bahan baku error:', matRes.error.message);
+
+      // 4. Hapus kategori
+      const catRes = await supabase.from('categories').delete().neq('id', '');
+      if (catRes.error) console.warn('[Supabase] Hapus kategori error:', catRes.error.message);
+
+      return { success: true, message: 'Seluruh database dan riwayat berhasil dikosongkan!' };
+    } catch (e: unknown) {
       console.error('[Supabase] Clear entire database error:', e);
-      return false;
+      const msg = e instanceof Error ? e.message : 'Gagal mengosongkan database';
+      return { success: false, message: msg };
     }
   },
 
