@@ -36,6 +36,7 @@ import { CategoryIcon } from '@/components/common/CategoryIcon';
 import { CategoryManageModal } from '@/components/kategori/CategoryManageModal';
 import { DeleteDatabaseModal } from '@/components/common/DeleteDatabaseModal';
 import { ConfirmSyncDeleteModal } from '@/components/common/ConfirmSyncDeleteModal';
+import { ToastNotification, ToastData } from '@/components/common/ToastNotification';
 import { getCategoryDisplayUnit } from '@/lib/utils';
 import { RawMaterial, FinishedProduct, Category } from '@/types';
 import { AuthGuard } from '@/components/auth/AuthGuard';
@@ -89,14 +90,14 @@ export default function StockPage() {
     type: 'material',
   });
 
-  // Toast feedback state
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  // Toast feedback state (Berhasil & Gagal)
+  const [toast, setToast] = useState<ToastData | null>(null);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ type, message });
     setTimeout(() => {
-      setToastMessage(null);
-    }, 3000);
+      setToast(null);
+    }, 3500);
   };
 
   // Kategori aktif sesuai tab
@@ -195,7 +196,7 @@ export default function StockPage() {
   const handleDeleteProduct = (p: FinishedProduct) => {
     if (confirm(`Hapus produk "${p.name}" (${p.stock} pcs) dari Manajemen Stok?`)) {
       deleteProduct(p.id);
-      showToast(`Produk ${p.name} dihapus.`);
+      showToast(`Produk "${p.name}" berhasil dihapus dari etalase.`, 'success');
     }
   };
 
@@ -223,10 +224,10 @@ export default function StockPage() {
     setIsDeletingSync(true);
     try {
       const res = await deleteMaterialWithSync(materialToDeleteSync.id, true);
-      showToast(res.message);
+      showToast(res.message, res.success ? 'success' : 'error');
       setMaterialToDeleteSync(null);
     } catch {
-      showToast('Gagal menghapus bahan.');
+      showToast('Gagal menghapus bahan baku.', 'error');
     } finally {
       setIsDeletingSync(false);
     }
@@ -241,19 +242,7 @@ export default function StockPage() {
         <Header />
 
         {/* Floating Toast Notification */}
-        <AnimatePresence>
-          {toastMessage && (
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="fixed top-20 right-4 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#3E2723] text-white text-xs font-black shadow-xl border border-[#FFB300]"
-            >
-              <Check className="w-4 h-4 text-[#FFB300]" />
-              <span>{toastMessage}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <ToastNotification toast={toast} onClose={() => setToast(null)} />
 
         <main className="p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 max-w-7xl w-full mx-auto">
           {/* Top Title & Tab Switcher */}
@@ -541,6 +530,7 @@ export default function StockPage() {
         initialCategoryName={reduceCategoryTarget?.name}
         initialMaterialId={reduceCategoryTarget?.materialId}
         initialMaterialName={reduceCategoryTarget?.materialName}
+        onSuccess={(msg) => showToast(msg, 'success')}
       />
       <CategoryManageModal
         isOpen={isCatManageOpen}
@@ -559,7 +549,7 @@ export default function StockPage() {
         onClose={() => setIsClearStockOpen(false)}
         onConfirm={async () => {
           const res = await clearEntireDatabase();
-          showToast(res.message);
+          showToast(res.message, res.success ? 'success' : 'error');
         }}
         title="Hapus Seluruh Database & Riwayat"
         itemCountText={`${categories.length} Kategori, ${rawMaterials.length} Bahan, ${finishedProducts.length} Produk, ${transactions.length} Transaksi`}

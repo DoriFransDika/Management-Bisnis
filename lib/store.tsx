@@ -70,7 +70,7 @@ interface StoreContextType {
   addRawMaterialStock: (materialId: string, amount: number, totalCost: number) => void;
   recordSale: (productId: string, qty: number, paymentMethod: 'Tunai' | 'QRIS / Transfer', customPrice?: number) => { success: boolean; message: string };
   // Item CRUD & Quick Actions
-  addNewMaterial: (material: Omit<RawMaterial, 'id' | 'updatedAt'>, totalPurchaseCost?: number) => void;
+  addNewMaterial: (material: Omit<RawMaterial, 'id' | 'updatedAt'>, totalPurchaseCost?: number) => { success: boolean; message: string };
   reduceCategoryStock: (categoryId: string, amountKg: number, reason: string) => { success: boolean; message: string };
   updateMaterial: (id: string, updated: Partial<RawMaterial>) => void;
   deleteMaterial: (id: string) => void;
@@ -689,6 +689,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setTransactions((prev) => [newTrx, ...prev]);
       supabaseService.insertTransaction(newTrx).catch(console.error);
     }
+
+    return {
+      success: true,
+      message: existing
+        ? `Stok bahan "${cleanName}" bertambah +${mat.stock} ${mat.unit} (total ${Number((Number(existing.stock) + Number(mat.stock)).toFixed(3))} ${mat.unit}).`
+        : `Bahan baku "${cleanName}" berhasil ditambahkan (+${mat.stock} ${mat.unit}).`,
+    };
   };
 
   const reduceCategoryStock = (
@@ -869,9 +876,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!name) return { success: false, message: 'Nama produk wajib diisi!' };
     if (!Number.isFinite(qty) || qty <= 0) return { success: false, message: 'Jumlah stok harus berupa angka bulat lebih dari 0!' };
 
-    const existing = finishedProducts.find(
-      (p) => p.categoryId === cat.id && p.name.toLowerCase().trim() === name.toLowerCase()
-    );
+    const existing =
+      finishedProducts.find(
+        (p) =>
+          p.categoryId === cat.id &&
+          p.name.toLowerCase().trim() === name.toLowerCase()
+      ) ||
+      finishedProducts.find(
+        (p) => p.name.toLowerCase().trim() === name.toLowerCase()
+      );
 
     let resultStock = qty;
     if (existing) {

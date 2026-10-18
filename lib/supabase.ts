@@ -201,6 +201,7 @@ export function mapTransactionFromDb(row: DbTransaction): Transaction {
     description: row.description || '',
     paymentMethod: (row.payment_method || row.paymentMethod || 'Tunai') as 'Tunai' | 'QRIS / Transfer',
     quantity: row.quantity || undefined,
+    created_at: row.created_at || undefined,
   };
 }
 
@@ -421,7 +422,8 @@ export const supabaseService = {
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
-      .order('date', { ascending: false });
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false });
     if (error) {
       console.warn('[Supabase] Failed to fetch transactions:', error.message);
       return null;

@@ -27,6 +27,7 @@ import { Header } from '@/components/navigation/Header';
 import { DeleteDatabaseModal } from '@/components/common/DeleteDatabaseModal';
 import { ConfirmSyncDeleteModal } from '@/components/common/ConfirmSyncDeleteModal';
 import { TransactionModal } from '@/components/keuangan/TransactionModal';
+import { ToastNotification, ToastData } from '@/components/common/ToastNotification';
 import {
   formatRupiah,
   cleanTrxDescription,
@@ -60,11 +61,11 @@ export default function FinancePage() {
   const [timeRange, setTimeRange] = useState<FinanceTimeRange>('all');
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
   const [productSearchQuery, setProductSearchQuery] = useState('');
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastData | null>(null);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 3500);
   };
 
   const filteredTransactions = React.useMemo(() => {
@@ -152,6 +153,10 @@ export default function FinancePage() {
 
   // Group transactions by date for daily breakdown
   const groupedTransactions = React.useMemo(() => {
+    // Catat urutan asli di state store (transaksi yang baru ditambah selalu di index 0)
+    const storeOrderMap = new Map<string, number>();
+    transactions.forEach((t, i) => storeOrderMap.set(t.id, i));
+
     const map = new Map<string, Transaction[]>();
 
     filteredTransactions.forEach((trx) => {
@@ -170,11 +175,42 @@ export default function FinancePage() {
       totalOut: number;
     }[] = [];
 
-    // Sort dates descending
+    // Sort dates descending (tanggal terbaru di atas)
     const sortedKeys = Array.from(map.keys()).sort((a, b) => (b > a ? 1 : b < a ? -1 : 0));
 
     sortedKeys.forEach((key) => {
-      const items = map.get(key)!;
+      const rawItems = map.get(key)!;
+      // Urutkan transaksi pada hari yang sama: transaksi terbaru selalu di urutan paling atas
+      const items = [...rawItems].sort((a, b) => {
+        // 1. Cek created_at jika tersedia
+        if (a.created_at && b.created_at) {
+          const diffCreated = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          if (!isNaN(diffCreated) && diffCreated !== 0) return diffCreated;
+        }
+
+        // 2. Ekstrak timestamp dari id format trx-177...
+        const getTs = (t: Transaction) => {
+          if (t.id && t.id.startsWith('trx-')) {
+            const num = Number(t.id.replace('trx-', ''));
+            if (!isNaN(num) && num > 1000000) return num;
+          }
+          return 0;
+        };
+        const tsA = getTs(a);
+        const tsB = getTs(b);
+        if (tsA > 0 || tsB > 0) {
+          const diff = tsB - tsA;
+          if (diff !== 0) return diff;
+        }
+
+        // 3. Fallback ke urutan array state store (index lebih kecil = baru dimasukkan)
+        const idxA = storeOrderMap.get(a.id) ?? 999999;
+        const idxB = storeOrderMap.get(b.id) ?? 999999;
+        if (idxA !== idxB) return idxA - idxB;
+
+        return (b.id || '').localeCompare(a.id || '');
+      });
+
       let displayDate = key;
       try {
         const d = new Date(key);
@@ -205,7 +241,7 @@ export default function FinancePage() {
     });
 
     return groups;
-  }, [filteredTransactions]);
+  }, [filteredTransactions, transactions]);
 
   const handleDeleteTrx = (trx: Transaction) => {
     const isMaterialExpense =
@@ -221,7 +257,7 @@ export default function FinancePage() {
     } else {
       if (confirm(`Hapus catatan transaksi: "${cleanTrxDescription(trx.description)}"?`)) {
         deleteTransaction(trx.id);
-        showToast('Transaksi berhasil dihapus.');
+        showToast('Transaksi berhasil dihapus.', 'success');
         if (selectedTrxForDetail?.id === trx.id) {
           setSelectedTrxForDetail(null);
         }
@@ -234,13 +270,13 @@ export default function FinancePage() {
     setIsDeletingSync(true);
     try {
       const res = await deleteTransactionWithSync(trxToDeleteSync.id, true);
-      showToast(res.message);
+      showToast(res.message, res.success ? 'success' : 'error');
       if (selectedTrxForDetail?.id === trxToDeleteSync.id) {
         setSelectedTrxForDetail(null);
       }
       setTrxToDeleteSync(null);
     } catch {
-      showToast('Gagal menghapus transaksi.');
+      showToast('Gagal menghapus transaksi.', 'error');
     } finally {
       setIsDeletingSync(false);
     }
@@ -256,7 +292,7 @@ export default function FinancePage() {
       `Dibuat otomatis oleh Sistem Dapoer Mamak.`;
 
     navigator.clipboard.writeText(text);
-    showToast('Ringkasan keuangan disalin ke clipboard!');
+    showToast('Ringkasan keuangan disalin ke clipboard!', 'success');
   };
 
   return (
@@ -268,19 +304,7 @@ export default function FinancePage() {
         <Header />
 
         {/* Floating Toast Notification */}
-        <AnimatePresence>
-          {toastMessage && (
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="fixed top-20 right-4 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#3E2723] text-white text-xs font-black shadow-xl border border-[#FFB300]"
-            >
-              <Check className="w-4 h-4 text-[#FFB300]" />
-              <span>{toastMessage}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <ToastNotification toast={toast} onClose={() => setToast(null)} />
 
         <main className="p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 max-w-7xl w-full mx-auto">
           {/* Top Title Banner */}
@@ -545,7 +569,7 @@ export default function FinancePage() {
                   Tidak ada catatan mutasi transaksi yang cocok dengan filter saat ini.
                 </div>
               ) : (
-                groupedTransactions.map((group) => (
+                groupedTransactions.map((group, groupIndex) => (
                   <div key={group.dateKey} className="relative">
                     {/* Sticky Day Header */}
                     <div className="sticky top-0 z-10 px-3.5 sm:px-4 py-2 bg-[#FAF7F2]/95 backdrop-blur-md border-b border-[#EFE4DA] flex items-center justify-between shadow-xs">
@@ -582,7 +606,7 @@ export default function FinancePage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#EFE4DA]/60">
-                          {group.items.map((trx) => {
+                          {group.items.map((trx, trxIndex) => {
                             const itemName = getTransactionItemName(trx, finishedProducts, rawMaterials);
                             const qtyStr = getTransactionQuantity(trx);
                             const cleanDesc = cleanTrxDescription(trx.description);
@@ -595,9 +619,16 @@ export default function FinancePage() {
                               >
                                 {/* 1. Jenis Produk */}
                                 <td className="py-2.5 px-3">
-                                  <p className="font-black text-[#3E2723] text-xs truncate max-w-[170px] sm:max-w-xs" title={itemName}>
-                                    {itemName}
-                                  </p>
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <p className="font-black text-[#3E2723] text-xs truncate max-w-[170px] sm:max-w-xs" title={itemName}>
+                                      {itemName}
+                                    </p>
+                                    {groupIndex === 0 && trxIndex === 0 && (
+                                      <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[9px] font-black tracking-wide border border-amber-300 shrink-0 shadow-2xs">
+                                        ✨ Terbaru
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
 
                                 {/* 2. Jumlah */}
@@ -817,7 +848,7 @@ export default function FinancePage() {
         onClose={() => setIsClearFinanceOpen(false)}
         onConfirm={async () => {
           const res = await clearTransactionData();
-          showToast(res.message);
+          showToast(res.message, res.success ? 'success' : 'error');
         }}
         title="Hapus Seluruh Riwayat Pembukuan"
         itemCountText={`${transactions.length} Catatan Transaksi Kasir & Dapur`}

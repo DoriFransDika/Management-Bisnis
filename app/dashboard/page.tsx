@@ -22,7 +22,7 @@ import { NotificationPanel } from '@/components/dashboard/NotificationPanel';
 import { TransactionModal } from '@/components/keuangan/TransactionModal';
 import { ItemModal } from '@/components/stok/ItemModal';
 import { formatRupiah, cleanTrxDescription } from '@/lib/utils';
-import { Check } from 'lucide-react';
+import { ToastNotification, ToastData } from '@/components/common/ToastNotification';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 
 export default function DashboardPage() {
@@ -30,11 +30,11 @@ export default function DashboardPage() {
 
   const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
   const [isAddMaterialOpen, setIsAddMaterialOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastData | null>(null);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 3500);
   };
 
   return (
@@ -105,19 +105,7 @@ export default function DashboardPage() {
           </motion.div>
 
           {/* Floating Toast Notification */}
-          <AnimatePresence>
-            {toastMessage && (
-              <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="fixed top-20 right-4 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#3E2723] text-white text-xs font-black shadow-xl border border-[#FFB300]"
-              >
-                <Check className="w-4 h-4 text-[#FFB300]" />
-                <span>{toastMessage}</span>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          <ToastNotification toast={toast} onClose={() => setToast(null)} />
 
           {/* Bagian Atas: 4 Kotak Metrik Utama (Grid 2 Kolom di HP) */}
           <SummaryCards />

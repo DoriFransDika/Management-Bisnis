@@ -75,21 +75,33 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
 
   const nameTrimmed = name.trim().toLowerCase();
 
-  // Saran nama merek / bahan yang sudah pernah diinput
-  const brandSuggestions = React.useMemo(() => {
-    if (!isMaterial || !nameTrimmed || isEditing) return [];
-    return rawMaterials
-      .filter((m) => m.name.toLowerCase().includes(nameTrimmed))
-      .slice(0, 5);
-  }, [isMaterial, nameTrimmed, isEditing, rawMaterials]);
+  // Saran nama merek / produk yang sudah pernah diinput (opsional untuk dipilih)
+  const suggestions = React.useMemo(() => {
+    if (!nameTrimmed || isEditing) return [];
+    if (isMaterial) {
+      return rawMaterials
+        .filter((m) => m.name.toLowerCase().includes(nameTrimmed))
+        .slice(0, 6);
+    } else {
+      return finishedProducts
+        .filter((p) => p.name.toLowerCase().includes(nameTrimmed))
+        .slice(0, 6);
+    }
+  }, [isMaterial, nameTrimmed, isEditing, rawMaterials, finishedProducts]);
 
-  // Deteksi kecocokan nama persis untuk menginformasikan akumulasi stok
+  // Deteksi kecocokan nama persis untuk menginformasikan akumulasi stok di database
   const matchedExisting = React.useMemo(() => {
-    if (!isMaterial || !nameTrimmed || isEditing) return null;
-    return rawMaterials.find(
-      (m) => m.name.toLowerCase().trim() === nameTrimmed
-    ) || null;
-  }, [isMaterial, nameTrimmed, isEditing, rawMaterials]);
+    if (!nameTrimmed || isEditing) return null;
+    if (isMaterial) {
+      return rawMaterials.find(
+        (m) => m.name.toLowerCase().trim() === nameTrimmed
+      ) || null;
+    } else {
+      return finishedProducts.find(
+        (p) => p.name.toLowerCase().trim() === nameTrimmed
+      ) || null;
+    }
+  }, [isMaterial, nameTrimmed, isEditing, rawMaterials, finishedProducts]);
 
   if (!isOpen) return null;
 
@@ -140,8 +152,9 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
           unit: savedUnit,
           costPerUnit: calculatedCostPerUnit,
         });
+        onSuccess?.(`Bahan baku ${name.trim()} berhasil diperbarui.`);
       } else {
-        addNewMaterial(
+        const res = addNewMaterial(
           {
             name: name.trim(),
             category: categoryName,
@@ -153,6 +166,7 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
           },
           parsedTotalCost
         );
+        onSuccess?.(res?.message || `Bahan baku ${name.trim()} berhasil ditambahkan.`);
       }
     } else {
       // ===== PRODUK READY: satuan dikunci "pcs", batas warning otomatis dikunci 5 pcs =====
@@ -271,8 +285,10 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
           <div className="relative">
             <label className="block text-xs font-black text-[#3E2723] mb-1.5 flex items-center justify-between">
               <span>{isMaterial ? 'Nama Merek / Bahan' : 'Nama Produk'} <span className="text-rose-600">*</span></span>
-              {isMaterial && (
+              {isMaterial ? (
                 <span className="text-[10px] text-[#8D6E63] font-medium">Misal: Cakra Kembar, Segitiga Biru, Gulaku</span>
+              ) : (
+                <span className="text-[10px] text-[#8D6E63] font-medium">Misal: Donat Kentang, Roti Coklat Keju</span>
               )}
             </label>
             <div className="relative">
@@ -285,12 +301,12 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
                   setName(e.target.value);
                   setShowSuggestions(true);
                 }}
-                placeholder={isMaterial ? 'Contoh: Tepung Segitiga Biru, Ragi Saf-Instant' : 'Contoh: Roti Coklat Keju'}
+                placeholder={isMaterial ? 'Contoh: Tepung Segitiga Biru, Ragi Saf-Instant' : 'Contoh: Roti Coklat Keju, Donat Kentang'}
                 className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-4 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none placeholder-[#A1887F]"
               />
 
-              {/* Suggestions Dropdown for existing brand names */}
-              {isMaterial && showSuggestions && brandSuggestions.length > 0 && (
+              {/* Suggestions Dropdown for existing items (both material and ready product) */}
+              {showSuggestions && suggestions.length > 0 && (
                 <>
                   <div
                     className="fixed inset-0 z-20"
@@ -298,31 +314,33 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
                   />
                   <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border-2 border-[#FFD54F] rounded-2xl shadow-xl z-30 overflow-hidden divide-y divide-[#EFE4DA] animate-in fade-in zoom-in-95 duration-100 max-h-56 overflow-y-auto">
                     <div className="px-3 py-1.5 bg-[#FFF8E1] text-[10px] font-black text-[#8D6E63] flex items-center justify-between">
-                      <span>PILIH SARAN MEREK (OPSIONAL)</span>
+                      <span>PILIH SARAN {isMaterial ? 'MEREK' : 'PRODUK'} (OPSIONAL)</span>
                       <span className="text-[#BCAAA4]">Klik untuk pilih</span>
                     </div>
-                    {brandSuggestions.map((m) => (
+                    {suggestions.map((item) => (
                       <button
-                        key={m.id}
+                        key={item.id}
                         type="button"
                         onClick={() => {
-                          setName(m.name);
-                          if (m.categoryId) setCategoryId(m.categoryId);
-                          if (m.unit) setInputUnit(m.unit);
+                          setName(item.name);
+                          if (item.categoryId) setCategoryId(item.categoryId);
+                          if (isMaterial && 'unit' in item && item.unit) {
+                            setInputUnit(item.unit);
+                          }
                           setShowSuggestions(false);
                         }}
                         className="w-full px-3.5 py-2 text-left hover:bg-[#FFF3E0] flex items-center justify-between transition-colors group cursor-pointer"
                       >
                         <div>
                           <p className="text-xs font-black text-[#3E2723] group-hover:text-[#E65100]">
-                            {m.name}
+                            {item.name}
                           </p>
                           <p className="text-[10px] text-[#8D6E63]">
-                            Kategori: {m.category}
+                            Kategori: {item.category}
                           </p>
                         </div>
                         <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
-                          Stok: {m.stock} {m.unit}
+                          Stok: {item.stock} {'unit' in item ? item.unit : 'pcs'}
                         </span>
                       </button>
                     ))}
@@ -332,14 +350,18 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
             </div>
 
             {/* Indikator Ramah jika nama yang dimasukkan sama persis */}
-            {isMaterial && matchedExisting && (
+            {matchedExisting && (
               <div className="mt-2 p-2.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center justify-between gap-2 animate-in fade-in">
                 <div className="flex items-center gap-1.5 font-bold">
                   <span className="text-sm">✨</span>
-                  <span>Merek sudah ada ({matchedExisting.name}). Jumlah akan diakumulasikan ke stok aktif.</span>
+                  <span>
+                    {isMaterial
+                      ? `Merek sudah ada (${matchedExisting.name}). Jumlah akan diakumulasikan ke stok aktif.`
+                      : `Produk sudah ada (${matchedExisting.name}). Jumlah akan diakumulasikan ke stok aktif.`}
+                  </span>
                 </div>
                 <span className="font-black text-amber-900 bg-amber-200/70 px-2 py-0.5 rounded-lg shrink-0 text-[10px]">
-                  Sisa: {matchedExisting.stock} {matchedExisting.unit}
+                  Sisa: {matchedExisting.stock} {'unit' in matchedExisting ? matchedExisting.unit : 'pcs'}
                 </span>
               </div>
             )}

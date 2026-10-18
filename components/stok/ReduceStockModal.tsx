@@ -13,6 +13,7 @@ interface ReduceStockModalProps {
   initialCategoryName?: string;
   initialMaterialId?: string;
   initialMaterialName?: string;
+  onSuccess?: (msg: string) => void;
 }
 
 export function ReduceStockModal({
@@ -22,6 +23,7 @@ export function ReduceStockModal({
   initialCategoryName,
   initialMaterialId,
   initialMaterialName,
+  onSuccess,
 }: ReduceStockModalProps) {
   const { categories, rawMaterials, reduceCategoryStock } = useStore();
 
@@ -121,6 +123,7 @@ export function ReduceStockModal({
     );
 
     if (res.success) {
+      onSuccess?.(res.message);
       onClose();
     } else {
       setErrorMsg(res.message);

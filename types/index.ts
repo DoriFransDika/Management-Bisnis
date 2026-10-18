@@ -53,6 +53,7 @@ export interface Transaction {
   description: string;
   paymentMethod: 'Tunai' | 'QRIS / Transfer';
   quantity?: string;
+  created_at?: string;
 }
 
 export interface ProductionLog {
