@@ -616,26 +616,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const addNewMaterial = (mat: Omit<RawMaterial, 'id' | 'updatedAt'>, totalPurchaseCost?: number) => {
     const today = new Date().toISOString().split('T')[0];
-
     const cleanName = mat.name.trim();
 
-    // Cek apakah sudah ada bahan baku dengan NAMA MEREK yang sama persis dalam kategori ini
-    const existing = rawMaterials.find(
-      (m) =>
-        ((mat.categoryId && m.categoryId === mat.categoryId) ||
-          m.category.toLowerCase().trim() === mat.category.toLowerCase().trim()) &&
-        m.name.toLowerCase().trim() === cleanName.toLowerCase()
-    );
+    // Cek apakah sudah ada bahan baku dengan NAMA MEREK yang sama persis dalam kategori ini atau secara global
+    const existing =
+      rawMaterials.find(
+        (m) =>
+          m.name.toLowerCase().trim() === cleanName.toLowerCase() &&
+          ((mat.categoryId && m.categoryId === mat.categoryId) ||
+            m.category.toLowerCase().trim() === mat.category.toLowerCase().trim())
+      ) ||
+      rawMaterials.find(
+        (m) => m.name.toLowerCase().trim() === cleanName.toLowerCase()
+      );
 
     let targetMaterialId = '';
 
     if (existing) {
       targetMaterialId = existing.id;
-      // Akumulasikan stok jika nama merek bahan baku yang sama persis sudah ada
+      // Akumulasikan stok jika nama merek bahan baku yang sama sudah ada
       const updatedStock = Number((Number(existing.stock) + Number(mat.stock)).toFixed(3));
+      const costPerUnit =
+        mat.costPerUnit && mat.costPerUnit > 0
+          ? mat.costPerUnit
+          : existing.costPerUnit;
+
       const updated = {
         ...existing,
         stock: updatedStock,
+        costPerUnit,
         updatedAt: today,
       };
 
@@ -644,6 +653,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       );
       supabaseService.updateRawMaterial(existing.id, {
         stock: updatedStock,
+        costPerUnit,
         updatedAt: today,
       }).catch(console.error);
     } else {
@@ -682,16 +692,32 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   };
 
   const reduceCategoryStock = (
-    categoryId: string,
+    targetIdentifier: string,
     amountKg: number,
     reason: string
   ): { success: boolean; message: string } => {
-    const target = rawMaterials.find(
-      (m) => m.categoryId === categoryId || m.category.toLowerCase().trim() === categoryId.toLowerCase().trim()
-    );
+    const cleanIdent = targetIdentifier.trim().toLowerCase();
+
+    // 1. Cari berdasarkan ID bahan baku spesifik
+    let target = rawMaterials.find((m) => m.id === targetIdentifier);
+
+    // 2. Jika bukan ID bahan, cari berdasarkan categoryId
+    if (!target) {
+      target = rawMaterials.find((m) => m.categoryId === targetIdentifier);
+    }
+
+    // 3. Jika belum ketemu, cari berdasarkan nama bahan baku
+    if (!target) {
+      target = rawMaterials.find((m) => m.name.toLowerCase().trim() === cleanIdent);
+    }
+
+    // 4. Jika belum ketemu, cari berdasarkan nama kategori
+    if (!target) {
+      target = rawMaterials.find((m) => m.category.toLowerCase().trim() === cleanIdent);
+    }
 
     if (!target) {
-      return { success: false, message: 'Kategori bahan baku tidak ditemukan!' };
+      return { success: false, message: 'Bahan baku atau kategori tidak ditemukan!' };
     }
 
     if (target.stock <= 0) {
@@ -957,6 +983,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     };
     setTransactions((prev) => [newEntry, ...prev]);
     supabaseService.insertTransaction(newEntry).catch(console.error);
+
+    const newNotif: ActivityNotification = {
+      id: `notif-${Date.now()}`,
+      type: trx.type === 'income' ? 'sale' : 'expense',
+      title: trx.type === 'income' ? `Pemasukan Kas: ${formatRupiah(trx.amount)}` : `Pengeluaran Kas: ${formatRupiah(trx.amount)}`,
+      message: `${trx.category} • ${trx.description}`,
+      time: 'Baru saja',
+      severity: 'info',
+    };
+    setNotifications((prev) => [newNotif, ...prev]);
+    supabaseService.insertNotification(newNotif).catch(console.error);
   };
 
   const deleteTransaction = (id: string) => {

@@ -13,6 +13,7 @@ import {
 import { Category, UnitGroup } from '@/types';
 import { getCategoryUnitGroup, cleanCategoryDescription, UNIT_GROUP_CONFIG } from '@/lib/utils';
 import { Scale, Droplets, Package } from 'lucide-react';
+import { FriendlyAlertModal } from '@/components/common/FriendlyAlertModal';
 
 interface CategoryManageModalProps {
   isOpen: boolean;
@@ -39,6 +40,20 @@ export function CategoryManageModal({
   const [selectedColorPreset, setSelectedColorPreset] = useState(CATEGORY_COLOR_PRESETS[0]);
   const [description, setDescription] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [alertState, setAlertState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'warning' | 'danger' | 'info' | 'success';
+    actionText?: string;
+    onAction?: () => void;
+    secondaryText?: string;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'warning',
+  });
 
   if (!isOpen) return null;
 
@@ -103,15 +118,30 @@ export function CategoryManageModal({
   };
 
   const handleDelete = (cat: Category) => {
-    if (confirm(`Yakin ingin menghapus kategori "${cat.name}"?`)) {
-      const res = deleteCategory(cat.id);
-      if (!res.success) {
-        alert(res.message);
-      } else {
-        setFeedback('Kategori berhasil dihapus.');
-        setTimeout(() => setFeedback(null), 2500);
-      }
-    }
+    setAlertState({
+      isOpen: true,
+      title: 'Hapus Kategori?',
+      message: `Apakah Anda yakin ingin menghapus kategori "${cat.name}"?`,
+      type: 'danger',
+      actionText: 'Ya, Hapus Kategori',
+      secondaryText: 'Batal',
+      onAction: () => {
+        const res = deleteCategory(cat.id);
+        if (!res.success) {
+          setAlertState({
+            isOpen: true,
+            title: 'Kategori Belum Bisa Dihapus',
+            message: `Kategori "${cat.name}" saat ini masih digunakan oleh bahan baku atau produk di toko. Silakan pindahkan atau hapus item tersebut terlebih dahulu sebelum menghapus kategori ini.`,
+            type: 'warning',
+            actionText: 'Saya Mengerti',
+          });
+        } else {
+          setAlertState((prev) => ({ ...prev, isOpen: false }));
+          setFeedback('Kategori berhasil dihapus.');
+          setTimeout(() => setFeedback(null), 2500);
+        }
+      },
+    });
   };
 
   return (
@@ -471,6 +501,18 @@ export function CategoryManageModal({
           )}
         </div>
       </div>
+
+      <FriendlyAlertModal
+        isOpen={alertState.isOpen}
+        onClose={() => setAlertState((prev) => ({ ...prev, isOpen: false }))}
+        title={alertState.title}
+        message={alertState.message}
+        type={alertState.type}
+        actionText={alertState.actionText}
+        onAction={alertState.onAction}
+        secondaryText={alertState.secondaryText}
+        onSecondary={() => setAlertState((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

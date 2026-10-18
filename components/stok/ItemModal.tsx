@@ -16,7 +16,7 @@ interface ItemModalProps {
 }
 
 export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: ItemModalProps) {
-  const { categories, finishedProducts, addNewMaterial, updateMaterial, updateProduct, addReadyProductStock } = useStore();
+  const { categories, rawMaterials, finishedProducts, addNewMaterial, updateMaterial, updateProduct, addReadyProductStock } = useStore();
 
   const isMaterial = mode === 'material';
   const isEditing = Boolean(itemToEdit);
@@ -27,6 +27,7 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
 
   // Common fields
   const [name, setName] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [categoryId, setCategoryId] = useState('');
   const [stock, setStock] = useState<number | string>(1);
   const [minStock, setMinStock] = useState<number | string>(1);
@@ -71,6 +72,24 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemToEdit, isOpen, mode]);
+
+  const nameTrimmed = name.trim().toLowerCase();
+
+  // Saran nama merek / bahan yang sudah pernah diinput
+  const brandSuggestions = React.useMemo(() => {
+    if (!isMaterial || !nameTrimmed || isEditing) return [];
+    return rawMaterials
+      .filter((m) => m.name.toLowerCase().includes(nameTrimmed))
+      .slice(0, 5);
+  }, [isMaterial, nameTrimmed, isEditing, rawMaterials]);
+
+  // Deteksi kecocokan nama persis untuk menginformasikan akumulasi stok
+  const matchedExisting = React.useMemo(() => {
+    if (!isMaterial || !nameTrimmed || isEditing) return null;
+    return rawMaterials.find(
+      (m) => m.name.toLowerCase().trim() === nameTrimmed
+    ) || null;
+  }, [isMaterial, nameTrimmed, isEditing, rawMaterials]);
 
   if (!isOpen) return null;
 
@@ -249,21 +268,81 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
           </div>
 
           {/* Nama Merek / Barang */}
-          <div>
+          <div className="relative">
             <label className="block text-xs font-black text-[#3E2723] mb-1.5 flex items-center justify-between">
               <span>{isMaterial ? 'Nama Merek / Bahan' : 'Nama Produk'} <span className="text-rose-600">*</span></span>
               {isMaterial && (
                 <span className="text-[10px] text-[#8D6E63] font-medium">Misal: Cakra Kembar, Segitiga Biru, Gulaku</span>
               )}
             </label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={isMaterial ? 'Contoh: Tepung Segitiga Biru, Ragi Saf-Instant' : 'Contoh: Roti Coklat Keju'}
-              className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-4 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none placeholder-[#A1887F]"
-            />
+            <div className="relative">
+              <input
+                type="text"
+                required
+                value={name}
+                onFocus={() => setShowSuggestions(true)}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setShowSuggestions(true);
+                }}
+                placeholder={isMaterial ? 'Contoh: Tepung Segitiga Biru, Ragi Saf-Instant' : 'Contoh: Roti Coklat Keju'}
+                className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-4 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none placeholder-[#A1887F]"
+              />
+
+              {/* Suggestions Dropdown for existing brand names */}
+              {isMaterial && showSuggestions && brandSuggestions.length > 0 && (
+                <>
+                  <div
+                    className="fixed inset-0 z-20"
+                    onClick={() => setShowSuggestions(false)}
+                  />
+                  <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border-2 border-[#FFD54F] rounded-2xl shadow-xl z-30 overflow-hidden divide-y divide-[#EFE4DA] animate-in fade-in zoom-in-95 duration-100 max-h-56 overflow-y-auto">
+                    <div className="px-3 py-1.5 bg-[#FFF8E1] text-[10px] font-black text-[#8D6E63] flex items-center justify-between">
+                      <span>PILIH SARAN MEREK (OPSIONAL)</span>
+                      <span className="text-[#BCAAA4]">Klik untuk pilih</span>
+                    </div>
+                    {brandSuggestions.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          setName(m.name);
+                          if (m.categoryId) setCategoryId(m.categoryId);
+                          if (m.unit) setInputUnit(m.unit);
+                          setShowSuggestions(false);
+                        }}
+                        className="w-full px-3.5 py-2 text-left hover:bg-[#FFF3E0] flex items-center justify-between transition-colors group cursor-pointer"
+                      >
+                        <div>
+                          <p className="text-xs font-black text-[#3E2723] group-hover:text-[#E65100]">
+                            {m.name}
+                          </p>
+                          <p className="text-[10px] text-[#8D6E63]">
+                            Kategori: {m.category}
+                          </p>
+                        </div>
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
+                          Stok: {m.stock} {m.unit}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Indikator Ramah jika nama yang dimasukkan sama persis */}
+            {isMaterial && matchedExisting && (
+              <div className="mt-2 p-2.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center justify-between gap-2 animate-in fade-in">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <span className="text-sm">✨</span>
+                  <span>Merek sudah ada ({matchedExisting.name}). Jumlah akan diakumulasikan ke stok aktif.</span>
+                </div>
+                <span className="font-black text-amber-900 bg-amber-200/70 px-2 py-0.5 rounded-lg shrink-0 text-[10px]">
+                  Sisa: {matchedExisting.stock} {matchedExisting.unit}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Stok Awal & Satuan */}

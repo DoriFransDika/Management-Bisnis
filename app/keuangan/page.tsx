@@ -69,7 +69,8 @@ export default function FinancePage() {
 
   const filteredTransactions = React.useMemo(() => {
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const isoToday = now.toISOString().split('T')[0];
+    const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
 
@@ -81,7 +82,7 @@ export default function FinancePage() {
       const matchesTime = (() => {
         if (timeRange === 'all') return true;
         if (!t.date) return true;
-        if (timeRange === 'daily') return t.date === todayStr;
+        if (timeRange === 'daily') return t.date === localToday || t.date === isoToday;
 
         try {
           const trxDate = new Date(t.date);
@@ -802,6 +803,13 @@ export default function FinancePage() {
           isDeleting={isDeletingSync}
         />
       )}
+
+      {/* Record Financial Transaction Modal */}
+      <TransactionModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSuccess={(msg) => showToast(msg)}
+      />
 
       {/* Delete Financial Database Confirmation Modal */}
       <DeleteDatabaseModal

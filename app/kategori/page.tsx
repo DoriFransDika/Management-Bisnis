@@ -32,6 +32,7 @@ import {
 import { Category, UnitGroup } from '@/types';
 import { getCategoryUnitGroup } from '@/lib/utils';
 import { AuthGuard } from '@/components/auth/AuthGuard';
+import { FriendlyAlertModal } from '@/components/common/FriendlyAlertModal';
 
 export default function CategoryManagerPage() {
   const {
@@ -55,6 +56,20 @@ export default function CategoryManagerPage() {
   const [iconName, setIconName] = useState('Wheat');
   const [selectedColorPreset, setSelectedColorPreset] = useState(CATEGORY_COLOR_PRESETS[0]);
   const [alertMsg, setAlertMsg] = useState<{ success: boolean; text: string } | null>(null);
+  const [alertState, setAlertState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'warning' | 'danger' | 'info' | 'success';
+    actionText?: string;
+    onAction?: () => void;
+    secondaryText?: string;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'warning',
+  });
 
   const openCreateModal = () => {
     setEditingCategory(null);
@@ -116,12 +131,30 @@ export default function CategoryManagerPage() {
   };
 
   const handleDelete = (cat: Category) => {
-    if (confirm(`Yakin ingin menghapus kategori "${cat.name}"?`)) {
-      const res = deleteCategory(cat.id);
-      if (!res.success) {
-        alert(res.message);
-      }
-    }
+    setAlertState({
+      isOpen: true,
+      title: 'Hapus Kategori?',
+      message: `Apakah Anda yakin ingin menghapus kategori "${cat.name}"?`,
+      type: 'danger',
+      actionText: 'Ya, Hapus Kategori',
+      secondaryText: 'Batal',
+      onAction: () => {
+        const res = deleteCategory(cat.id);
+        if (!res.success) {
+          setAlertState({
+            isOpen: true,
+            title: 'Kategori Belum Bisa Dihapus',
+            message: `Kategori "${cat.name}" saat ini masih digunakan oleh bahan baku atau produk jadi. Silakan pindahkan atau sesuaikan item terkait terlebih dahulu sebelum menghapus kategori ini.`,
+            type: 'warning',
+            actionText: 'Saya Mengerti',
+          });
+        } else {
+          setAlertState((prev) => ({ ...prev, isOpen: false }));
+          setAlertMsg({ success: true, text: 'Kategori berhasil dihapus.' });
+          setTimeout(() => setAlertMsg(null), 2500);
+        }
+      },
+    });
   };
 
   const filteredCategories = categories.filter(
@@ -494,6 +527,18 @@ export default function CategoryManagerPage() {
           </div>
         </div>
       )}
+
+      <FriendlyAlertModal
+        isOpen={alertState.isOpen}
+        onClose={() => setAlertState((prev) => ({ ...prev, isOpen: false }))}
+        title={alertState.title}
+        message={alertState.message}
+        type={alertState.type}
+        actionText={alertState.actionText}
+        onAction={alertState.onAction}
+        secondaryText={alertState.secondaryText}
+        onSecondary={() => setAlertState((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
     </AuthGuard>
   );

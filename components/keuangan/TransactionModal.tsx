@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Receipt, X, Check, ShoppingBag, AlertTriangle } from 'lucide-react';
+import { Receipt, X, Check, ShoppingBag, ArrowUpRight, ArrowDownRight, CreditCard, Banknote } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { formatRupiah } from '@/lib/utils';
 
@@ -12,9 +12,12 @@ interface TransactionModalProps {
 }
 
 export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModalProps) {
-  const { categories, finishedProducts, recordProductSale } = useStore();
+  const { categories, finishedProducts, recordProductSale, addTransaction } = useStore();
 
   const productCategories = categories.filter((c) => c.type === 'product');
+
+  // Transaction Type: 'income' (Pemasukan) vs 'expense' (Pengeluaran)
+  const [trxType, setTrxType] = useState<'income' | 'expense'>('income');
 
   // Form State
   const [selectedProductId, setSelectedProductId] = useState<string>('');
@@ -22,6 +25,7 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [quantity, setQuantity] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'Tunai' | 'QRIS / Transfer'>('Tunai');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Quick Calculator helper
@@ -53,7 +57,21 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
     }
   };
 
+  const handleTypeChange = (newType: 'income' | 'expense') => {
+    setTrxType(newType);
+    setSelectedProductId('');
+    setErrorMsg(null);
+    if (newType === 'income') {
+      setCategory('Penjualan Toko');
+      setDescription('');
+    } else {
+      setCategory('Operasional & Gas');
+      setDescription('');
+    }
+  };
+
   const resetForm = () => {
+    setTrxType('income');
     setSelectedProductId('');
     setCategory('Penjualan Toko');
     setAmount('');
@@ -61,6 +79,7 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
     setCalcUnitPrice('');
     setCalcPcs('');
     setDescription('');
+    setPaymentMethod('Tunai');
     setErrorMsg(null);
   };
 
@@ -73,47 +92,84 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
     e.preventDefault();
     setErrorMsg(null);
 
-    if (selectedProduct && parsedQty <= 0) {
-      setErrorMsg(`Isi jumlah ${selectedProduct.name} yang terjual.`);
+    const parsedAmount = Number(amount);
+    if (!parsedAmount || parsedAmount <= 0) {
+      setErrorMsg('Nominal transaksi harus berupa angka lebih dari Rp 0.');
       return;
     }
 
+    if (!description.trim()) {
+      setErrorMsg('Keterangan transaksi wajib diisi.');
+      return;
+    }
+
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const finalQuantity = quantity.trim() || (calcPcs ? `${calcPcs} ${selectedProduct?.unit || 'pcs'}` : undefined);
 
-    // Validasi stok & pengurangan stok produk dilakukan terpusat di store (Manajemen Stok)
-    const res = recordProductSale({
-      productId: selectedProductId || undefined,
-      qty: parsedQty,
-      amount: Number(amount),
-      category,
-      description,
-      paymentMethod: 'Tunai',
-      quantityLabel: finalQuantity,
-    });
+    if (trxType === 'income' && selectedProductId) {
+      // Penjualan produk ready yang memotong stok otomatis
+      if (parsedQty <= 0) {
+        setErrorMsg(`Isi jumlah ${selectedProduct?.name} yang terjual.`);
+        return;
+      }
 
-    if (!res.success) {
-      setErrorMsg(res.message);
-      return;
+      const res = recordProductSale({
+        productId: selectedProductId,
+        qty: parsedQty,
+        amount: parsedAmount,
+        category,
+        description: description.trim(),
+        paymentMethod,
+        quantityLabel: finalQuantity,
+      });
+
+      if (!res.success) {
+        setErrorMsg(res.message);
+        return;
+      }
+
+      resetForm();
+      onClose();
+      onSuccess?.(res.message);
+    } else {
+      // Transaksi umum (Pemasukan tanpa produk atau Pengeluaran operasional)
+      addTransaction({
+        date: today,
+        type: trxType,
+        category,
+        amount: parsedAmount,
+        description: description.trim(),
+        paymentMethod,
+        quantity: finalQuantity,
+      });
+
+      const successText = trxType === 'income'
+        ? `Pemasukan kas ${formatRupiah(parsedAmount)} berhasil dicatat!`
+        : `Pengeluaran kas ${formatRupiah(parsedAmount)} berhasil dicatat!`;
+
+      resetForm();
+      onClose();
+      onSuccess?.(successText);
     }
-
-    resetForm();
-    onClose();
-    onSuccess?.(res.message);
   };
 
   const calculatedTotal =
     calcUnitPrice && calcPcs ? Number(calcUnitPrice) * Number(calcPcs) : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white border-2 border-[#EFE4DA] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl shadow-[#3E2723]/20 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/50 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="bg-white border-2 border-[#EFE4DA] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between pb-2 border-b border-[#EFE4DA]">
+        <div className="flex items-center justify-between pb-3 border-b border-[#EFE4DA]">
           <div className="flex items-center gap-2">
-            <span className="p-1.5 rounded-xl bg-blue-100 text-blue-700">
-              <Receipt className="w-4 h-4" />
+            <span className="p-2 rounded-xl bg-[#FFF3E0] text-[#FFB300] border border-[#FFE0B2]">
+              <Receipt className="w-5 h-5 text-[#3E2723]" />
             </span>
-            <h3 className="font-black text-[#3E2723] text-base">Catat Transaksi Penjualan</h3>
+            <div>
+              <h3 className="font-black text-[#3E2723] text-base">Catat Transaksi Keuangan</h3>
+              <p className="text-[11px] text-[#8D6E63] font-medium">Buku Kas & Riwayat Mutasi Toko</p>
+            </div>
           </div>
           <button
             type="button"
@@ -124,42 +180,58 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
           </button>
         </div>
 
-        {/* Catatan Aliran Data */}
-        <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2 font-medium">
-          <span className="text-base shrink-0">💡</span>
-          <span>
-            <strong>Informasi:</strong> Harga jual diatur di sini, dan stok produk jadi yang dipilih otomatis berkurang saat transaksi disimpan.
-          </span>
+        {/* Tab Switcher: Pemasukan vs Pengeluaran */}
+        <div className="grid grid-cols-2 p-1 bg-[#FAF7F2] rounded-2xl border border-[#EFE4DA]">
+          <button
+            type="button"
+            onClick={() => handleTypeChange('income')}
+            className={`py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all ${
+              trxType === 'income'
+                ? 'bg-[#2E7D32] text-white shadow-sm'
+                : 'text-[#6D4C41] hover:text-[#2E7D32]'
+            }`}
+          >
+            <ArrowUpRight className="w-4 h-4 stroke-[3]" />
+            <span>Pemasukan (+)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTypeChange('expense')}
+            className={`py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all ${
+              trxType === 'expense'
+                ? 'bg-[#C2185B] text-white shadow-sm'
+                : 'text-[#6D4C41] hover:text-[#C2185B]'
+            }`}
+          >
+            <ArrowDownRight className="w-4 h-4 stroke-[3]" />
+            <span>Pengeluaran (-)</span>
+          </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
-          {/* Pilih Produk Jadi Ready (Untuk Pengurangan Stok Otomatis) */}
-          {finishedProducts.length > 0 && (
-            <div>
-              <label className="block text-xs font-black text-[#3E2723] mb-1 flex items-center gap-1.5">
+          {/* Bagian Pemasukan: Opsi Pilih Produk Ready */}
+          {trxType === 'income' && finishedProducts.length > 0 && (
+            <div className="p-3 bg-emerald-50/60 rounded-2xl border border-emerald-200/80 space-y-2">
+              <label className="block text-xs font-black text-[#2E7D32] flex items-center gap-1.5">
                 <ShoppingBag className="w-3.5 h-3.5 text-[#2E7D32]" />
                 <span>Pilih Produk Ready (Stok Terpotong Otomatis)</span>
               </label>
               <select
                 value={selectedProductId}
                 onChange={(e) => handleProductSelect(e.target.value)}
-                className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-blue-500 rounded-2xl px-3 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none"
+                className="w-full bg-white border border-emerald-300 focus:border-emerald-500 rounded-xl px-3 py-2 text-xs text-[#3E2723] font-bold focus:outline-none"
               >
-                <option value="">-- Pilih Produk Ready (Opsional) --</option>
+                <option value="">-- Tanpa Produk (Pemasukan Umum / Katering) --</option>
                 {readyProducts.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name} — {p.category} (Ready: {p.stock} {p.unit})
                   </option>
                 ))}
               </select>
-              {readyProducts.length === 0 && (
-                <p className="mt-1 text-[11px] text-amber-700 font-semibold">
-                  Semua stok produk saat ini sedang kosong (0 pcs).
-                </p>
-              )}
+
               {selectedProduct && (
                 <div
-                  className={`mt-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center justify-between ${
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center justify-between ${
                     exceedsStock
                       ? 'bg-rose-50 border-rose-200 text-rose-800'
                       : 'bg-emerald-50 border-emerald-200 text-emerald-800'
@@ -177,44 +249,45 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
             </div>
           )}
 
-          {/* Kategori Penjualan */}
+          {/* Kategori Transaksi */}
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-black text-[#3E2723]">
-                Kategori Penjualan
-              </label>
-              {selectedProduct && (
-                <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full flex items-center gap-1 border border-amber-200">
-                  🔒 Terkunci (Mengikuti Produk)
-                </span>
-              )}
-            </div>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              disabled={Boolean(selectedProductId)}
-              className={`w-full border-2 rounded-2xl px-3 py-2.5 text-xs font-bold focus:outline-none transition-all ${
-                selectedProductId
-                  ? 'bg-stone-100 border-[#EFE4DA] text-stone-600 cursor-not-allowed opacity-90'
-                  : 'bg-[#FAF7F2] border-[#EFE4DA] focus:border-blue-500 text-[#3E2723]'
-              }`}
-            >
-              {category && !productCategories.some((cat) => cat.name === category) && category !== 'Penjualan Toko' && category !== 'Pesanan Khusus / Katering' && category !== 'Lainnya' && (
-                <option value={category}>{category}</option>
-              )}
-              <option value="Penjualan Toko">Penjualan Toko (Umum)</option>
-              {productCategories.map((cat) => (
-                <option key={cat.id} value={cat.name}>
-                  {cat.name}
-                </option>
-              ))}
-              <option value="Pesanan Khusus / Katering">Pesanan Khusus / Katering</option>
-              <option value="Lainnya">Lainnya</option>
-            </select>
-            {selectedProduct && (
-              <p className="mt-1 text-[10px] text-[#8D6E63] font-medium">
-                Kategori terkunci otomatis sesuai produk <strong>{selectedProduct.name}</strong> ({selectedProduct.category}).
-              </p>
+            <label className="block text-xs font-black text-[#3E2723] mb-1">
+              Kategori {trxType === 'income' ? 'Pemasukan' : 'Pengeluaran'}
+            </label>
+            {trxType === 'income' ? (
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                disabled={Boolean(selectedProductId)}
+                className={`w-full border-2 rounded-2xl px-3 py-2.5 text-xs font-bold focus:outline-none transition-all ${
+                  selectedProductId
+                    ? 'bg-stone-100 border-[#EFE4DA] text-stone-600 cursor-not-allowed opacity-90'
+                    : 'bg-[#FAF7F2] border-[#EFE4DA] focus:border-[#FFB300] text-[#3E2723]'
+                }`}
+              >
+                <option value="Penjualan Toko">Penjualan Toko (Umum)</option>
+                {productCategories.map((cat) => (
+                  <option key={cat.id} value={cat.name}>
+                    {cat.name}
+                  </option>
+                ))}
+                <option value="Pesanan Khusus / Katering">Pesanan Khusus / Katering</option>
+                <option value="Pemasukan Lainnya">Pemasukan Lainnya</option>
+              </select>
+            ) : (
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-3 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none"
+              >
+                <option value="Operasional & Gas">Operasional & Gas LPG</option>
+                <option value="Belanja Bahan Baku">Belanja Bahan Baku Dapur</option>
+                <option value="Kemasan & Plastik">Kemasan & Dus Roti</option>
+                <option value="Listrik & Air">Listrik & Air Toko</option>
+                <option value="Gaji & Upah">Gaji & Upah Karyawan</option>
+                <option value="Peralatan & Perawatan">Peralatan & Perawatan Mesin</option>
+                <option value="Pengeluaran Lainnya">Pengeluaran Lainnya</option>
+              </select>
             )}
           </div>
 
@@ -228,15 +301,19 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
               required
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Contoh: Penjualan Roti Abon, pesanan katering"
-              className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-blue-500 rounded-2xl px-4 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none placeholder-[#A1887F]"
+              placeholder={
+                trxType === 'income'
+                  ? 'Contoh: Penjualan Roti Manis kasir pagi, pesanan katering RT'
+                  : 'Contoh: Beli 3 tabung gas LPG 3kg, beli plastik OPP'
+              }
+              className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-4 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none placeholder-[#A1887F]"
             />
           </div>
 
           {/* Jumlah / Kuantitas Barang */}
           <div>
             <label className="block text-xs font-black text-[#3E2723] mb-1">
-              Jumlah / Kuantitas {selectedProduct ? `(${selectedProduct.unit})` : 'Barang'}
+              Jumlah / Kuantitas (Opsional)
             </label>
             <input
               type="text"
@@ -248,124 +325,153 @@ export function TransactionModal({ isOpen, onClose, onSuccess }: TransactionModa
                 if (!isNaN(num)) {
                   setCalcPcs(String(num));
                   if (calcUnitPrice) {
-                    const tot = Number(calcUnitPrice) * num;
-                    if (tot > 0) setAmount(String(tot));
+                    setAmount(String(num * Number(calcUnitPrice)));
                   }
                 }
               }}
-              placeholder={selectedProduct ? `Contoh: 5 ${selectedProduct.unit}` : 'Contoh: 5 pcs, 2 box'}
-              className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-blue-500 rounded-2xl px-4 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none placeholder-[#A1887F]"
+              placeholder={selectedProduct ? `Contoh: 10 ${selectedProduct.unit}` : 'Contoh: 5 tabung / 20 box'}
+              className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-4 py-2.5 text-xs text-[#3E2723] font-bold focus:outline-none placeholder-[#A1887F]"
             />
           </div>
 
-          {/* Total Penjualan & Kalkulator Cepat */}
-          <div className="space-y-2">
-            <div>
-              <label className="block text-xs font-black text-[#3E2723] mb-1">
-                Total Nominal Penjualan (Rp) <span className="text-rose-600">*</span>
-              </label>
+          {/* Kalkulator Cepat (Khusus Produk Terpilih) */}
+          {selectedProduct && (
+            <div className="p-3 bg-[#FAF7F2] rounded-2xl border border-[#EFE4DA] space-y-2">
+              <div className="flex items-center justify-between text-xs font-black text-[#3E2723]">
+                <span>Kalkulator Otomatis</span>
+                {calculatedTotal > 0 && (
+                  <span className="text-[#2E7D32]">{formatRupiah(calculatedTotal)}</span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] text-[#8D6E63] font-bold mb-0.5">
+                    Harga Satuan (Rp)
+                  </label>
+                  <input
+                    type="number"
+                    value={calcUnitPrice}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCalcUnitPrice(val);
+                      if (val && calcPcs) {
+                        setAmount(String(Number(val) * Number(calcPcs)));
+                      }
+                    }}
+                    placeholder="Contoh: 8500"
+                    className="w-full bg-white border border-[#EFE4DA] rounded-xl px-2.5 py-1.5 text-xs font-bold focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-[#8D6E63] font-bold mb-0.5">
+                    Jumlah ({selectedProduct.unit})
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={calcPcs}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCalcPcs(val);
+                      setQuantity(val ? `${val} ${selectedProduct.unit}` : '');
+                      if (val && calcUnitPrice) {
+                        setAmount(String(Number(val) * Number(calcUnitPrice)));
+                      }
+                    }}
+                    placeholder="Contoh: 5"
+                    className="w-full bg-white border border-[#EFE4DA] rounded-xl px-2.5 py-1.5 text-xs font-bold focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Nominal Transaksi (Rp) */}
+          <div>
+            <label className="block text-xs font-black text-[#3E2723] mb-1">
+              Total Nominal Transaksi (Rp) <span className="text-rose-600">*</span>
+            </label>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-black text-[#8D6E63]">
+                Rp
+              </span>
               <input
                 type="number"
                 required
                 min="1"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder="Contoh: 50000"
-                className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-blue-500 rounded-2xl px-4 py-2.5 text-sm text-[#3E2723] font-black focus:outline-none"
+                placeholder="Contoh: 150000"
+                className="w-full bg-[#FAF7F2] border-2 border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl pl-12 pr-4 py-2.5 text-xs text-[#3E2723] font-black focus:outline-none"
               />
-
-              {/* Live Standard Rupiah Preview */}
-              {amount && Number(amount) > 0 ? (
-                <div className="mt-1.5 px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-200 text-xs font-bold text-blue-800 flex items-center justify-between">
-                  <span className="text-[11px] text-blue-600 font-medium">Nominal Standar:</span>
-                  <span className="font-black text-sm text-blue-700">{formatRupiah(Number(amount))}</span>
-                </div>
-              ) : null}
             </div>
+            {amount && Number(amount) > 0 && (
+              <p className="mt-1 text-xs font-black text-[#E65100]">
+                {formatRupiah(Number(amount))}
+              </p>
+            )}
+          </div>
 
-            {/* Bantuan Hitung Cepat (Harga Satuan × Pcs) */}
-            <div className="p-3 rounded-2xl bg-[#FAF7F2] border border-[#EFE4DA] space-y-1.5">
-              <span className="text-[10px] font-bold text-[#8D6E63] uppercase tracking-wide block">
-                Atur Harga Jual & Hitung Otomatis:
-              </span>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <span className="text-[10px] text-[#8D6E63] font-bold block">Harga per Item (Rp)</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="500"
-                    value={calcUnitPrice}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setCalcUnitPrice(val);
-                      if (val && calcPcs) {
-                        const tot = Number(val) * Number(calcPcs);
-                        if (tot > 0) setAmount(String(tot));
-                      }
-                    }}
-                    placeholder="10000"
-                    className="w-full bg-white border border-[#EFE4DA] focus:border-blue-400 rounded-xl px-2.5 py-1.5 text-xs text-[#3E2723] font-bold focus:outline-none mt-0.5"
-                  />
-                </div>
-                <div>
-                  <span className="text-[10px] text-[#8D6E63] font-bold block">Jumlah Qty</span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={calcPcs}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setCalcPcs(val);
-                      if (!quantity || !isNaN(Number(quantity))) {
-                        setQuantity(val ? `${val} ${selectedProduct?.unit || 'pcs'}` : '');
-                      }
-                      if (val && calcUnitPrice) {
-                        const tot = Number(calcUnitPrice) * Number(val);
-                        if (tot > 0) setAmount(String(tot));
-                      }
-                    }}
-                    placeholder="5"
-                    className="w-full bg-white border border-[#EFE4DA] focus:border-blue-400 rounded-xl px-2.5 py-1.5 text-xs text-[#3E2723] font-bold focus:outline-none mt-0.5"
-                  />
-                </div>
-              </div>
-              {calculatedTotal > 0 && (
-                <p className="text-[11px] text-blue-700 font-bold mt-1 text-right flex items-center justify-end gap-1">
-                  <span>💡 Terhitung otomatis:</span>
-                  <span className="font-black">{formatRupiah(calculatedTotal)}</span>
-                </p>
-              )}
+          {/* Metode Pembayaran */}
+          <div>
+            <label className="block text-xs font-black text-[#3E2723] mb-1">
+              Metode Pembayaran
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('Tunai')}
+                className={`py-2 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-1.5 transition-all ${
+                  paymentMethod === 'Tunai'
+                    ? 'bg-[#3E2723] text-[#FFB300] border-[#3E2723] shadow-xs'
+                    : 'bg-[#FAF7F2] text-[#6D4C41] border-[#EFE4DA] hover:bg-[#FFF3E0]'
+                }`}
+              >
+                <Banknote className="w-3.5 h-3.5" />
+                <span>Tunai / Kas Toko</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('QRIS / Transfer')}
+                className={`py-2 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-1.5 transition-all ${
+                  paymentMethod === 'QRIS / Transfer'
+                    ? 'bg-[#3E2723] text-[#FFB300] border-[#3E2723] shadow-xs'
+                    : 'bg-[#FAF7F2] text-[#6D4C41] border-[#EFE4DA] hover:bg-[#FFF3E0]'
+                }`}
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                <span>QRIS / Transfer</span>
+              </button>
             </div>
           </div>
 
-          {/* Pesan Validasi */}
-          {(errorMsg || exceedsStock) && (
-            <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>
-                {errorMsg ||
-                  `Jumlah melebihi stok! ${selectedProduct?.name} hanya tersedia ${selectedProduct?.stock} ${selectedProduct?.unit}.`}
-              </span>
+          {/* Error Alert */}
+          {errorMsg && (
+            <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold animate-in fade-in">
+              {errorMsg}
             </div>
           )}
 
-          {/* Action Buttons */}
-          <div className="pt-3 border-t border-[#EFE4DA] flex items-center justify-end gap-2">
+          {/* Buttons */}
+          <div className="pt-2 flex items-center justify-end gap-2 border-t border-[#EFE4DA]">
             <button
               type="button"
               onClick={handleClose}
-              className="px-4 py-2.5 rounded-2xl border border-[#EFE4DA] text-xs font-black text-[#8D6E63] hover:bg-stone-50 transition-colors"
+              className="px-4 py-2.5 rounded-2xl text-xs font-bold text-[#8D6E63] hover:text-[#3E2723] transition-colors"
             >
               Batal
             </button>
             <button
               type="submit"
-              disabled={exceedsStock}
-              className="px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-black shadow-md shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-1.5"
+              disabled={Boolean(exceedsStock)}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-black shadow-md transition-all ${
+                trxType === 'income'
+                  ? 'bg-gradient-to-r from-[#2E7D32] to-[#388E3C] text-white shadow-emerald-700/20 hover:brightness-105 active:scale-95'
+                  : 'bg-gradient-to-r from-[#C2185B] to-[#D81B60] text-white shadow-pink-700/20 hover:brightness-105 active:scale-95'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
             >
               <Check className="w-4 h-4 stroke-[3]" />
-              <span>Simpan Transaksi</span>
+              <span>Simpan {trxType === 'income' ? 'Pemasukan' : 'Pengeluaran'}</span>
             </button>
           </div>
         </form>
