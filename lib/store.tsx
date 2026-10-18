@@ -47,7 +47,8 @@ export type SupabaseStatus = 'loading' | 'connected' | 'disconnected' | 'needs_s
 
 interface StoreContextType {
   user: UserSession;
-  login: (email: string, pass: string) => boolean;
+  isLoaded: boolean;
+  login: (email: string, pass: string) => Promise<boolean>;
   logout: () => void;
   categories: Category[];
   rawMaterials: RawMaterial[];
@@ -270,22 +271,53 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     } catch (e) { console.error(e); }
   }, [notifications, isLoaded]);
 
-  // Auth methods
-  const login = (email: string, pass: string): boolean => {
-    if (
-      email.trim().toLowerCase() === 'dapurmamak@gmail.com' &&
-      pass.trim() === 'bismillah laku'
-    ) {
-      const session: UserSession = {
-        email: 'dapurmamak@gmail.com',
-        name: 'Mamak Chef & Owner',
-        role: 'Owner Utama',
-        isAuthenticated: true,
-      };
-      setUser(session);
-      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(session));
-      return true;
+  // Auth methods (Purely dynamic via Supabase Auth and database users table)
+  const login = async (email: string, pass: string): Promise<boolean> => {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPass = pass.trim();
+
+    if (!cleanEmail || !cleanPass) return false;
+
+    // 1. Authenticate with Supabase Auth
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password: cleanPass,
+      });
+
+      if (!authError && authData.user) {
+        const session: UserSession = {
+          email: authData.user.email || cleanEmail,
+          name: (authData.user.user_metadata?.name as string) || 'Mamak Chef & Owner',
+          role: (authData.user.user_metadata?.role as string) || 'Owner Utama',
+          isAuthenticated: true,
+        };
+        setUser(session);
+        localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(session));
+        return true;
+      }
+    } catch (authErr) {
+      console.warn('Supabase auth sign in error:', authErr);
     }
+
+    // 2. Check dynamic users table in Supabase
+    try {
+      const dbCheck = await supabaseService.verifyUser(cleanEmail, cleanPass);
+      if (dbCheck.success && dbCheck.user) {
+        const session: UserSession = {
+          email: dbCheck.user.email,
+          name: dbCheck.user.name,
+          role: dbCheck.user.role,
+          isAuthenticated: true,
+        };
+        setUser(session);
+        localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(session));
+        return true;
+      }
+    } catch (e) {
+      console.warn('Database user verification error:', e);
+    }
+
     return false;
   };
 
@@ -1031,6 +1063,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     <StoreContext.Provider
       value={{
         user,
+        isLoaded,
         login,
         logout,
         categories,

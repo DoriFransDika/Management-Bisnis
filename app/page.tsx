@@ -16,8 +16,10 @@ import {
   Tags
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useStore } from '@/lib/store';
 
 export default function LandingPage() {
+  const { user } = useStore();
   const steps = [
     {
       num: '01',
@@ -80,10 +82,10 @@ export default function LandingPage() {
         </div>
 
         <Link
-          href="/login"
+          href={user.isAuthenticated ? '/dashboard' : '/login'}
           className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-white hover:bg-[#FFF3E0] border-2 border-[#EFE4DA] text-xs font-black text-[#3E2723] transition-all shadow-xs"
         >
-          <span>Masuk Sistem</span>
+          <span>{user.isAuthenticated ? 'Ke Dashboard' : 'Masuk Sistem'}</span>
           <ArrowRight className="w-3.5 h-3.5 text-[#FFB300]" />
         </Link>
       </header>
@@ -126,28 +128,21 @@ export default function LandingPage() {
           Sistem pembukuan toko roti privat: catat resep adonan, kontrol stok bahan baku, etalase roti siap saji, dan pantau laba bersih secara real-time.
         </p>
 
-        {/* CTA Buttons with Golden Ribbon Accent */}
-        <div className="mt-8 flex flex-col sm:flex-row items-center gap-3.5 w-full sm:w-auto">
+        {/* CTA Button with Golden Accent */}
+        <div className="mt-8 flex items-center justify-center w-full sm:w-auto">
           <Link
-            href="/login"
+            href={user.isAuthenticated ? '/dashboard' : '/login'}
             className="w-full sm:w-auto flex items-center justify-center gap-2.5 px-9 py-3.5 rounded-3xl bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] font-black text-sm shadow-lg shadow-[#FFB300]/30 hover:brightness-105 active:scale-95 transition-all"
           >
-            <span>Masuk ke Aplikasi</span>
+            <span>{user.isAuthenticated ? 'Buka Dashboard Anda' : 'Masuk ke Aplikasi (Login Pengelola)'}</span>
             <ArrowRight className="w-4 h-4 stroke-[3]" />
-          </Link>
-
-          <Link
-            href="/dashboard"
-            className="w-full sm:w-auto flex items-center justify-center gap-2 px-7 py-3.5 rounded-3xl bg-white hover:bg-[#FFF3E0] border-2 border-[#EFE4DA] text-[#3E2723] font-black text-sm shadow-xs transition-all"
-          >
-            <span>Buka Dashboard Langsung</span>
           </Link>
         </div>
 
-        {/* Quick Credential Card */}
+        {/* Protected System Card */}
         <div className="mt-6 p-3 px-5 rounded-2xl bg-white border border-[#EFE4DA] text-xs text-[#5D4037] flex items-center gap-2 shadow-xs">
           <ShieldCheck className="w-4 h-4 text-[#2E7D32] shrink-0" />
-          <span>Akses Privat: Email: <strong className="text-[#3E2723]">dapurmamak@gmail.com</strong> • Sandi: <strong className="text-[#3E2723]">bismillah laku</strong></span>
+          <span>Akses Privat: Masuk menggunakan akun terdaftar di sistem database Dapur Mamak</span>
         </div>
 
         {/* Cara Kerja Sistem Per-Step */}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -11,46 +11,90 @@ import {
   EyeOff,
   ArrowRight,
   ShieldAlert,
-  KeyRound,
-  Heart
+  Loader2,
+  Clock
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useStore();
+  const { login, user, isLoaded } = useStore();
 
-  const [email, setEmail] = useState('dapurmamak@gmail.com');
-  const [password, setPassword] = useState('bismillah laku');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Security: Brute-force protection with cooldown lockout
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutRemaining, setLockoutRemaining] = useState(0);
+  const [timeoutNotice, setTimeoutNotice] = useState(false);
+
+  // Detect auto-logout due to 5 minutes of inactivity
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('reason') === 'timeout') {
+        setTimeoutNotice(true);
+      }
+    }
+  }, []);
+
+  // Auto-redirect if already logged in
+  useEffect(() => {
+    if (isLoaded && user.isAuthenticated) {
+      router.replace('/dashboard');
+    }
+  }, [isLoaded, user.isAuthenticated, router]);
+
+  // Lockout countdown timer
+  useEffect(() => {
+    if (lockoutRemaining <= 0) return;
+    const timer = setInterval(() => {
+      setLockoutRemaining((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutRemaining]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (lockoutRemaining > 0) {
+      setErrorMsg(`Akses dibatasi sementara demi keamanan. Coba lagi dalam ${lockoutRemaining} detik.`);
+      return;
+    }
+
     setErrorMsg('');
     setIsLoading(true);
 
-    setTimeout(() => {
-      const ok = login(email, password);
+    try {
+      const ok = await login(email, password);
       if (ok) {
+        setFailedAttempts(0);
         router.push('/dashboard');
       } else {
-        setErrorMsg('Email atau Password salah! Gunakan kredensial resmi Dapoer Mamak.');
+        const nextAttempts = failedAttempts + 1;
+        setFailedAttempts(nextAttempts);
+
+        if (nextAttempts >= 5) {
+          setLockoutRemaining(30);
+          setErrorMsg('Terlalu banyak percobaan gagal (5x). Akun dikunci sementara selama 30 detik.');
+        } else {
+          setErrorMsg(`Email atau Kata Sandi salah! Percobaan ${nextAttempts}/5.`);
+        }
         setIsLoading(false);
       }
-    }, 350);
-  };
-
-  const handleInstantLogin = () => {
-    setEmail('dapurmamak@gmail.com');
-    setPassword('bismillah laku');
-    setErrorMsg('');
-    setIsLoading(true);
-    setTimeout(() => {
-      login('dapurmamak@gmail.com', 'bismillah laku');
-      router.push('/dashboard');
-    }, 250);
+    } catch {
+      setErrorMsg('Gagal melakukan proses autentikasi. Silakan coba beberapa saat lagi.');
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -81,6 +125,14 @@ export default function LoginPage() {
           </p>
         </div>
 
+        {/* Auto-logout Timeout Notice */}
+        {timeoutNotice && (
+          <div className="mb-4 p-3.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold flex items-center gap-2.5 animate-in fade-in duration-200">
+            <Clock className="w-4 h-4 shrink-0 text-amber-600" />
+            <span>Sesi Anda otomatis berakhir karena 5 menit tidak ada aktivitas. Silakan masuk kembali.</span>
+          </div>
+        )}
+
         {/* Error Alert */}
         {errorMsg && (
           <div className="mb-4 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
@@ -100,10 +152,15 @@ export default function LoginPage() {
               <input
                 type="email"
                 required
+                autoComplete="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="dapurmamak@gmail.com"
-                className="w-full bg-white/90 border border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl pl-10 pr-4 py-3 text-xs sm:text-sm text-[#3E2723] font-bold placeholder-[#A1887F] focus:outline-none transition-colors"
+                disabled={isLoading || lockoutRemaining > 0}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (errorMsg) setErrorMsg('');
+                }}
+                placeholder="nama@email.com"
+                className="w-full bg-white/90 border border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl pl-10 pr-4 py-3 text-xs sm:text-sm text-[#3E2723] font-bold placeholder-[#A1887F] focus:outline-none transition-colors disabled:opacity-60"
               />
             </div>
           </div>
@@ -117,10 +174,15 @@ export default function LoginPage() {
               <input
                 type={showPassword ? 'text' : 'password'}
                 required
+                autoComplete="current-password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                disabled={isLoading || lockoutRemaining > 0}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (errorMsg) setErrorMsg('');
+                }}
                 placeholder="••••••••••••"
-                className="w-full bg-white/90 border border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl pl-10 pr-10 py-3 text-xs sm:text-sm text-[#3E2723] font-bold placeholder-[#A1887F] focus:outline-none transition-colors"
+                className="w-full bg-white/90 border border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl pl-10 pr-10 py-3 text-xs sm:text-sm text-[#3E2723] font-bold placeholder-[#A1887F] focus:outline-none transition-colors disabled:opacity-60"
               />
               <button
                 type="button"
@@ -135,11 +197,16 @@ export default function LoginPage() {
           {/* Golden Ribbon Action Button */}
           <button
             type="submit"
-            disabled={isLoading}
-            className="w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-3xl bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] font-black text-xs sm:text-sm shadow-md shadow-[#FFB300]/30 hover:brightness-105 active:scale-98 transition-all"
+            disabled={isLoading || lockoutRemaining > 0}
+            className="w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-3xl bg-gradient-to-r from-[#FFB300] to-[#FFA000] text-[#3E2723] font-black text-xs sm:text-sm shadow-md shadow-[#FFB300]/30 hover:brightness-105 active:scale-98 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isLoading ? (
-              <span>Membuka Dapur Mamak...</span>
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-[#3E2723]" />
+                <span>Memverifikasi Akun...</span>
+              </>
+            ) : lockoutRemaining > 0 ? (
+              <span>Terkunci ({lockoutRemaining}d)</span>
             ) : (
               <>
                 <span>Masuk ke Dashboard</span>
@@ -149,31 +216,8 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Instant Access Helper */}
-        <div className="mt-5 pt-5 border-t border-[#EFE4DA]">
-          <button
-            type="button"
-            onClick={handleInstantLogin}
-            className="w-full py-2.5 px-3 rounded-2xl bg-[#FFF3E0] hover:bg-[#FFE0B2] border border-[#FFD54F] text-[#3E2723] text-xs font-black flex items-center justify-center gap-2 transition-all group shadow-xs"
-          >
-            <KeyRound className="w-4 h-4 text-[#FFB300] group-hover:rotate-12 transition-transform stroke-[2.5]" />
-            <span>1-Klik Masuk Otomatis (Demo Mamak)</span>
-          </button>
-
-          <div className="mt-3 bg-white/80 p-3 rounded-2xl border border-[#EFE4DA] text-[11px] text-[#6D4C41] space-y-0.5">
-            <p>
-              Email:{' '}
-              <code className="text-[#3E2723] font-mono font-black">dapurmamak@gmail.com</code>
-            </p>
-            <p>
-              Sandi:{' '}
-              <code className="text-[#3E2723] font-mono font-black">bismillah laku</code>
-            </p>
-          </div>
-        </div>
-
         {/* Back to Home Link */}
-        <div className="mt-4 text-center">
+        <div className="mt-6 text-center">
           <Link
             href="/"
             className="text-xs text-[#8D6E63] hover:text-[#3E2723] transition-colors font-bold"

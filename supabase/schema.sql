@@ -75,6 +75,16 @@ CREATE TABLE IF NOT EXISTS public.notifications (
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 6. TABEL PENGGUNA (users)
+CREATE TABLE IF NOT EXISTS public.users (
+    id TEXT PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT 'Mamak Chef & Owner',
+    role TEXT NOT NULL DEFAULT 'Owner Utama',
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- =========================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- Memberikan izin SELECT, INSERT, UPDATE, DELETE kepada anon/public
@@ -85,6 +95,11 @@ ALTER TABLE public.raw_materials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.finished_products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+
+-- Users policies
+DROP POLICY IF EXISTS "Public full access users" ON public.users;
+CREATE POLICY "Public full access users" ON public.users FOR ALL USING (true) WITH CHECK (true);
 
 -- Categories policies
 DROP POLICY IF EXISTS "Public full access categories" ON public.categories;
@@ -213,3 +228,66 @@ ON CONFLICT (id) DO UPDATE SET
     message = EXCLUDED.message,
     time = EXCLUDED.time,
     severity = EXCLUDED.severity;
+
+-- Seed Users (Akun Owner Resmi Dapur Mamak)
+INSERT INTO public.users (id, email, password_hash, name, role)
+VALUES
+    ('user-owner-1', 'dapurmamak@gmail.com', 'dapurkita27', 'Mamak Chef & Owner', 'Owner Utama')
+ON CONFLICT (email) DO UPDATE SET
+    password_hash = EXCLUDED.password_hash,
+    name = EXCLUDED.name,
+    role = EXCLUDED.role;
+
+-- Konfirmasi otomatis email di auth.users (Supabase Auth)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'auth' AND table_name = 'users') THEN
+    UPDATE auth.users 
+    SET email_confirmed_at = now() 
+    WHERE email = 'dapurmamak@gmail.com';
+  END IF;
+END $$;
+
+-- =========================================================================
+-- INDEXES & PERFORMANCE
+-- =========================================================================
+CREATE INDEX IF NOT EXISTS idx_raw_materials_category_id ON public.raw_materials(category_id);
+CREATE INDEX IF NOT EXISTS idx_finished_products_category_id ON public.finished_products(category_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_date ON public.transactions(date DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON public.notifications(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);
+
+-- =========================================================================
+-- SUPABASE REALTIME REPLICATION SETUP
+-- Aktifkan broadcast perubahan realtime ke aplikasi frontend
+-- =========================================================================
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.categories;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.raw_materials;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.finished_products;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.transactions;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.users;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END $$;
+

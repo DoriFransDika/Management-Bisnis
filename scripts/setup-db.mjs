@@ -21,7 +21,7 @@ Cara 1 (Otomatis via Terminal):
 
 Cara 2 (Mudah via Supabase Dashboard Web - Rekomendasi):
   1. Buka Supabase SQL Editor:
-     https://supabase.com/dashboard/project/qtqcynyryjemqqunzhsz/sql
+     https://supabase.com/dashboard/project/ntezfhucfnsocvklczfc/sql
   2. Buka file: supabase/schema.sql di project ini
   3. Salin seluruh isinya dan Paste di SQL Editor
   4. Klik tombol "Run" (Selesai dalam 5 detik!)
@@ -30,7 +30,7 @@ Cara 2 (Mudah via Supabase Dashboard Web - Rekomendasi):
   process.exit(1);
 }
 
-const connectionString = `postgresql://postgres:${encodeURIComponent(password)}@db.qtqcynyryjemqqunzhsz.supabase.co:5432/postgres`;
+const connectionString = process.env.DATABASE_URL || `postgresql://postgres:${encodeURIComponent(password)}@db.ntezfhucfnsocvklczfc.supabase.co:5432/postgres`;
 
 async function run() {
   console.log('Menghubungkan ke database Supabase...');
@@ -51,7 +51,7 @@ async function run() {
     console.log('✓ Skema tabel, RLS policies, dan Data Awal berhasil dibuat di Supabase!');
 
     // Verify row counts
-    const tables = ['categories', 'raw_materials', 'finished_products', 'transactions', 'notifications'];
+    const tables = ['categories', 'raw_materials', 'finished_products', 'transactions', 'notifications', 'users'];
     for (const table of tables) {
       const res = await client.query(`SELECT COUNT(*) FROM public.${table}`);
       console.log(`  - Tabel public.${table}: ${res.rows[0].count} data`);
