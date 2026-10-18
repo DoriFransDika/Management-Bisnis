@@ -115,8 +115,23 @@ export function getCategoryUnitGroup(
   return 'weight';
 }
 
+export function getCategoryMinStock(
+  cat?: { minStock?: number; description?: string } | null
+): number {
+  if (!cat) return 5;
+  if (cat.minStock !== undefined && !isNaN(Number(cat.minStock))) {
+    return Number(cat.minStock);
+  }
+  const match = cat.description?.match(/\[min:([0-9.]+)\]/);
+  if (match) return Number(match[1]);
+  return 5;
+}
+
 export function cleanCategoryDescription(desc?: string): string {
-  return (desc || '').replace(/\s*\[unit:[^\]]+\]/g, '').trim();
+  return (desc || '')
+    .replace(/\s*\[unit:[^\]]+\]/g, '')
+    .replace(/\s*\[min:[^\]]+\]/g, '')
+    .trim();
 }
 
 export function getCategoryDisplayUnit(

@@ -25,6 +25,8 @@ export interface DbCategory {
   description?: string;
   unit_group?: 'weight' | 'volume' | 'count';
   unitGroup?: 'weight' | 'volume' | 'count';
+  min_stock?: number;
+  minStock?: number;
   created_at?: string;
 }
 
@@ -113,6 +115,12 @@ export function mapCategoryFromDb(row: DbCategory): Category {
     textColor: row.text_color || row.textColor || 'text-amber-700',
     description: row.description || '',
     unitGroup: row.unit_group || row.unitGroup || undefined,
+    minStock:
+      row.min_stock !== undefined
+        ? Number(row.min_stock)
+        : (row.minStock !== undefined
+        ? Number(row.minStock)
+        : (row.description?.match(/\[min:([0-9.]+)\]/) ? Number(row.description.match(/\[min:([0-9.]+)\]/)![1]) : undefined)),
   };
 }
 
@@ -126,6 +134,7 @@ export function mapCategoryToDb(cat: Partial<Category>): Record<string, unknown>
   if (cat.textColor !== undefined) result.text_color = cat.textColor;
   if (cat.description !== undefined) result.description = cat.description;
   if (cat.unitGroup !== undefined) result.unit_group = cat.unitGroup;
+  if (cat.minStock !== undefined) result.min_stock = cat.minStock;
   return result;
 }
 

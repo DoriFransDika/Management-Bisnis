@@ -30,7 +30,7 @@ import {
   CATEGORY_COLOR_PRESETS
 } from '@/components/common/CategoryIcon';
 import { Category, UnitGroup } from '@/types';
-import { getCategoryUnitGroup } from '@/lib/utils';
+import { getCategoryUnitGroup, getCategoryMinStock, cleanCategoryDescription } from '@/lib/utils';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { FriendlyAlertModal } from '@/components/common/FriendlyAlertModal';
 
@@ -53,6 +53,7 @@ export default function CategoryManagerPage() {
   const [name, setName] = useState('');
   const [type, setType] = useState<'material' | 'product'>('material');
   const [unitGroup, setUnitGroup] = useState<UnitGroup>('weight');
+  const [minStock, setMinStock] = useState<number | string>(5);
   const [iconName, setIconName] = useState('Wheat');
   const [selectedColorPreset, setSelectedColorPreset] = useState(CATEGORY_COLOR_PRESETS[0]);
   const [alertMsg, setAlertMsg] = useState<{ success: boolean; text: string } | null>(null);
@@ -76,6 +77,7 @@ export default function CategoryManagerPage() {
     setName('');
     setType(activeTab);
     setUnitGroup('weight');
+    setMinStock(5);
     setIconName(activeTab === 'material' ? 'Wheat' : 'Croissant');
     setSelectedColorPreset(CATEGORY_COLOR_PRESETS[0]);
     setAlertMsg(null);
@@ -87,6 +89,7 @@ export default function CategoryManagerPage() {
     setName(cat.name);
     setType(cat.type);
     setUnitGroup(getCategoryUnitGroup(cat));
+    setMinStock(getCategoryMinStock(cat));
     setIconName(cat.iconName);
     const foundPreset = CATEGORY_COLOR_PRESETS.find((p) => p.bg === cat.bgColor) || CATEGORY_COLOR_PRESETS[0];
     setSelectedColorPreset(foundPreset);
@@ -98,7 +101,13 @@ export default function CategoryManagerPage() {
     e.preventDefault();
     if (!name.trim()) return;
 
-    const finalDesc = type === 'material' ? `[unit:${unitGroup}]` : undefined;
+    const cleanDesc = cleanCategoryDescription(editingCategory?.description);
+    const parsedMin = Number(minStock) || 0;
+    const descParts: string[] = [];
+    if (cleanDesc) descParts.push(cleanDesc);
+    if (type === 'material') descParts.push(`[unit:${unitGroup}]`);
+    descParts.push(`[min:${parsedMin}]`);
+    const finalDesc = descParts.join(' ').trim();
 
     if (editingCategory) {
       updateCategory(editingCategory.id, {
@@ -109,6 +118,7 @@ export default function CategoryManagerPage() {
         bgColor: selectedColorPreset.bg,
         textColor: selectedColorPreset.text,
         description: finalDesc,
+        minStock: parsedMin,
       });
       setAlertMsg({ success: true, text: 'Kategori berhasil diperbarui!' });
     } else {
@@ -120,6 +130,7 @@ export default function CategoryManagerPage() {
         bgColor: selectedColorPreset.bg,
         textColor: selectedColorPreset.text,
         description: finalDesc,
+        minStock: parsedMin,
       });
       setAlertMsg({ success: true, text: 'Kategori baru berhasil ditambahkan!' });
     }
@@ -220,7 +231,7 @@ export default function CategoryManagerPage() {
                     : 'text-[#8D6E63] hover:text-[#3E2723]'
                 }`}
               >
-                Produk Roti Jadi ({categories.filter((c) => c.type === 'product').length})
+                Produk Jadi ({categories.filter((c) => c.type === 'product').length})
               </button>
             </div>
 
@@ -236,9 +247,12 @@ export default function CategoryManagerPage() {
             </div>
           </div>
 
-          {/* Category Cards Grid (3-4 Kolom Kompak: Hanya Ikon & Nama) */}
+          {/* Category Cards Grid (3-4 Kolom Kompak: Ikon, Nama & Batas Kritis) */}
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3">
             {filteredCategories.map((cat) => {
+              const catMin = getCategoryMinStock(cat);
+              const catUnit = cat.type === 'material' ? (getCategoryUnitGroup(cat) === 'weight' ? 'kg' : getCategoryUnitGroup(cat) === 'volume' ? 'liter' : 'pcs') : 'pcs';
+
               return (
                 <div
                   key={cat.id}
@@ -269,11 +283,14 @@ export default function CategoryManagerPage() {
                     <CategoryIcon name={cat.iconName} className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.5]" />
                   </div>
 
-                  {/* Category Name */}
+                  {/* Category Name & Batas Kritis */}
                   <div className="mt-2 w-full">
                     <h3 className="font-black text-[#3E2723] text-xs sm:text-sm truncate px-1">
                       {cat.name}
                     </h3>
+                    <span className="inline-block mt-1 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200 text-[9px] font-black" title="Batas stok kritis (sekarat)">
+                      Kritis: ≤ {catMin} {catUnit}
+                    </span>
                   </div>
                 </div>
               );
@@ -355,7 +372,7 @@ export default function CategoryManagerPage() {
                         : 'bg-white border-[#EFE4DA] text-[#8D6E63]'
                     }`}
                   >
-                    Produk Roti
+                    Produk Jadi
                   </button>
                 </div>
               </div>
@@ -437,6 +454,53 @@ export default function CategoryManagerPage() {
                   placeholder="Contoh: Tepung & Gandum, Roti Sisir, Donat"
                   className="w-full bg-white border border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-4 py-2.5 text-xs text-[#3E2723] font-black focus:outline-none"
                 />
+              </div>
+
+              {/* Batas Kritis Stok Minimum dengan Petunjuk '!' */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-black uppercase text-[#6D4C41] flex items-center gap-1.5">
+                    <span>Batas Kritis Stok Minimum</span>
+                    <div className="relative group/tooltip inline-flex items-center">
+                      <button
+                        type="button"
+                        className="w-4 h-4 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-900 font-black text-[10px] flex items-center justify-center border border-amber-300 transition-colors shadow-2xs"
+                        title="Petunjuk Batas Kritis"
+                      >
+                        !
+                      </button>
+                      {/* Tooltip Hover Explanation */}
+                      <div className="absolute left-6 top-1/2 -translate-y-1/2 w-64 p-2.5 rounded-xl bg-[#3E2723] text-white text-[11px] font-medium leading-relaxed shadow-xl border border-[#FFB300] hidden group-hover/tooltip:block z-50 pointer-events-none animate-in fade-in zoom-in-95 duration-100">
+                        <p className="font-bold text-[#FFB300] mb-0.5 flex items-center gap-1">
+                          <span>ℹ️</span> Penjelasan Batas Kritis:
+                        </p>
+                        Batas angka stok terendah untuk kategori ini. Jika stok barang berada di bawah atau sama dengan angka ini (atau habis/0), barang otomatis masuk status <strong>&quot;Kritis&quot;</strong> sebagai peringatan bahwa barang sudah sekarat dan perlu restock.
+                      </div>
+                    </div>
+                  </label>
+                  <span className="text-[10px] text-[#8D6E63] font-bold">
+                    Satuan: {type === 'material' ? (unitGroup === 'weight' ? 'kg' : unitGroup === 'volume' ? 'liter' : 'unit/pcs') : 'pcs'}
+                  </span>
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    required
+                    value={minStock}
+                    onChange={(e) => setMinStock(e.target.value)}
+                    placeholder="Contoh: 5"
+                    className="w-full bg-white border border-[#EFE4DA] focus:border-[#FFB300] rounded-2xl px-4 py-2.5 text-xs text-[#3E2723] font-black focus:outline-none pr-16"
+                  />
+                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-[#8D6E63] bg-[#FAF7F2] px-2 py-0.5 rounded-lg border border-[#EFE4DA]">
+                    {type === 'material' ? (unitGroup === 'weight' ? 'kg' : unitGroup === 'volume' ? 'liter' : 'pcs') : 'pcs'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-[#8D6E63] mt-1 font-medium">
+                  💡 Stok ≤ <strong className="text-amber-800 font-black">{minStock || 0} {type === 'material' ? (unitGroup === 'weight' ? 'kg' : unitGroup === 'volume' ? 'liter' : 'pcs') : 'pcs'}</strong> (atau 0) akan otomatis berstatus &quot;Kritis&quot;.
+                </p>
               </div>
 
               {/* Icon Picker (Khusus Bahan Baku atau Khusus Produk) */}

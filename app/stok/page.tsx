@@ -105,7 +105,7 @@ export default function StockPage() {
     activeTab === 'materials' ? c.type === 'material' : c.type === 'product'
   );
 
-  // 1. Daftar Bahan Baku Dapur: Tampil langsung per merek/varian dengan label kategori di atasnya
+  // 1. Daftar Bahan Baku Dapur: Tampil langsung per merek/varian dengan susunan alfabetis A-Z
   const filteredMaterialsList = React.useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     return rawMaterials
@@ -119,7 +119,8 @@ export default function StockPage() {
         const matchesSearch =
           !q || m.name.toLowerCase().includes(q) || m.category.toLowerCase().includes(q);
 
-        const isLow = m.stock <= m.minStock;
+        // Yang habis (<= 0) atau di bawah batas kritis (<= minStock) otomatis masuk kategori kritis
+        const isLow = m.stock <= 0 || m.stock <= m.minStock;
         const matchesStatus =
           stockStatusFilter === 'all'
             ? true
@@ -129,13 +130,8 @@ export default function StockPage() {
 
         return matchesCat && matchesSearch && matchesStatus;
       })
-      .sort((a, b) => {
-        // Habis/kritis paling atas, lalu alfabetis
-        const aLow = a.stock <= a.minStock ? 0 : 1;
-        const bLow = b.stock <= b.minStock ? 0 : 1;
-        if (aLow !== bLow) return aLow - bLow;
-        return a.name.localeCompare(b.name);
-      });
+      // Disusun rapi secara alfabetis (A-Z) agar mudah dicari dan user friendly
+      .sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
   }, [rawMaterials, selectedCategoryId, categories, searchQuery, stockStatusFilter]);
 
   const materialCounts = React.useMemo(() => {
@@ -148,8 +144,9 @@ export default function StockPage() {
     );
     return {
       all: inCat.length,
-      low: inCat.filter((m) => m.stock <= m.minStock).length,
-      safe: inCat.filter((m) => m.stock > m.minStock).length,
+      // Kritis mencakup yang habis (0) dan yang menipis (<= minStock)
+      low: inCat.filter((m) => m.stock <= 0 || m.stock <= m.minStock).length,
+      safe: inCat.filter((m) => m.stock > 0 && m.stock > m.minStock).length,
     };
   }, [rawMaterials, selectedCategoryId, categories]);
 
@@ -158,7 +155,7 @@ export default function StockPage() {
     setIsItemModalOpen(true);
   };
 
-  // 3. Daftar Produk Ready (langsung tampil per produk, difilter kategori + status + pencarian)
+  // 3. Daftar Produk Ready (langsung tampil per produk, difilter kategori + status + pencarian, urut alfabetis A-Z)
   const readyProductsList = React.useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     return finishedProducts
@@ -168,12 +165,8 @@ export default function StockPage() {
           !q || p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q);
         return matchesCat && matchesSearch && matchesReadyStatus(p, readyStatusFilter);
       })
-      .sort((a, b) => {
-        // Habis paling atas, lalu hampir habis, lalu tersedia
-        const rank = { out: 0, low: 1, safe: 2 } as const;
-        const diff = rank[getReadyProductStatus(a)] - rank[getReadyProductStatus(b)];
-        return diff !== 0 ? diff : a.name.localeCompare(b.name);
-      });
+      // Disusun rapi secara alfabetis (A-Z) agar tampilan bersih dan friendly
+      .sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
   }, [finishedProducts, selectedCategoryId, searchQuery, readyStatusFilter]);
 
   const readyCounts = React.useMemo(() => {
@@ -382,7 +375,7 @@ export default function StockPage() {
                 {([
                   { id: 'all', label: 'Semua', active: 'bg-[#3E2723] text-white', idle: 'text-[#8D6E63] hover:text-[#3E2723]' },
                   { id: 'available', label: 'Tersedia', active: 'bg-emerald-600 text-white', idle: 'text-emerald-700 hover:bg-emerald-50' },
-                  { id: 'low', label: 'Menipis', active: 'bg-amber-500 text-white', idle: 'text-amber-700 hover:bg-amber-50' },
+                  { id: 'low', label: 'Kritis', active: 'bg-[#D81B60] text-white', idle: 'text-[#D81B60] hover:bg-rose-50' },
                   { id: 'out', label: 'Habis', active: 'bg-rose-600 text-white', idle: 'text-rose-700 hover:bg-rose-50' },
                 ] as const).map((f) => (
                   <button

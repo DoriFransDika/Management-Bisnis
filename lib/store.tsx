@@ -427,6 +427,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
               prods.map((p) => (p.categoryId === id ? { ...p, category: updated.name! } : p))
             );
           }
+          if (updated.minStock !== undefined && updated.minStock !== c.minStock) {
+            setRawMaterials((mats) =>
+              mats.map((m) => (m.categoryId === id ? { ...m, minStock: updated.minStock! } : m))
+            );
+            setFinishedProducts((prods) =>
+              prods.map((p) => (p.categoryId === id ? { ...p, minStock: updated.minStock! } : p))
+            );
+          }
           return newCat;
         }
         return c;

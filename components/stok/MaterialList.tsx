@@ -24,22 +24,22 @@ interface MaterialListProps {
 
 const STATUS_STYLE = {
   out: {
-    card: 'border-rose-300 bg-gradient-to-b from-white to-rose-50/60',
-    badge: 'bg-rose-100 text-rose-700 border-rose-200',
+    card: 'border-rose-300 bg-gradient-to-b from-white to-rose-50/70 ring-1 ring-rose-200/50',
+    badge: 'bg-rose-100 text-rose-700 border-rose-300 font-black',
     stock: 'text-rose-600',
-    label: 'Habis',
+    label: 'Kritis (Habis)',
     Icon: PackageX,
   },
   low: {
     card: 'border-amber-300 bg-gradient-to-b from-white to-amber-50/60',
-    badge: 'bg-amber-100 text-amber-800 border-amber-200',
+    badge: 'bg-amber-100 text-amber-800 border-amber-200 font-black',
     stock: 'text-amber-700',
     label: 'Kritis',
     Icon: AlertTriangle,
   },
   safe: {
     card: 'border-[#EFE4DA] bg-white/95',
-    badge: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    badge: 'bg-emerald-100 text-emerald-800 border-emerald-200 font-bold',
     stock: 'text-[#2E7D32]',
     label: 'Aman',
     Icon: CheckCircle2,
