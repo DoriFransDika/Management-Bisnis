@@ -5,7 +5,14 @@ import { X, Check, Boxes, Croissant, AlertTriangle, Lock } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { Category, RawMaterial, FinishedProduct } from '@/types';
 import { CategoryIcon } from '@/components/common/CategoryIcon';
-import { formatRupiah, getCategoryUnitGroup, UNIT_GROUP_CONFIG, UnitGroupType } from '@/lib/utils';
+import {
+  formatRupiah,
+  getCategoryUnitGroup,
+  UNIT_GROUP_CONFIG,
+  UnitGroupType,
+  getCategoryMinStock,
+  getItemMinStock
+} from '@/lib/utils';
 
 interface ItemModalProps {
   isOpen: boolean;
@@ -50,7 +57,8 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
       setName(itemToEdit.name);
       setCategoryId(itemToEdit.categoryId);
       setStock(itemToEdit.stock);
-      setMinStock(isMaterial ? itemToEdit.minStock : 5);
+      const effectiveMin = getItemMinStock(itemToEdit, categories, isMaterial ? 1 : 5);
+      setMinStock(effectiveMin);
 
       if ('costPerUnit' in itemToEdit) {
         const cat = categories.find((c) => c.id === itemToEdit.categoryId);
@@ -66,7 +74,8 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
       setName('');
       setCategoryId(initialCat?.id || '');
       setStock(isMaterial ? 1 : '');
-      setMinStock(isMaterial ? 1 : 5);
+      const catMin = getCategoryMinStock(initialCat, isMaterial ? 1 : 5);
+      setMinStock(catMin);
       setInputUnit(UNIT_GROUP_CONFIG[initialGroup].units[0].id);
       setTotalCost('');
     }
@@ -116,9 +125,15 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
   const handleSelectCategory = (newCatId: string) => {
     setCategoryId(newCatId);
     const newCat = categories.find((c) => c.id === newCatId);
-    const newGroup = isMaterial ? getCategoryUnitGroup(newCat) : 'count';
-    const newUnits = UNIT_GROUP_CONFIG[newGroup].units;
-    setInputUnit(newUnits[0].id);
+    if (newCat) {
+      const catMin = getCategoryMinStock(newCat, isMaterial ? 1 : 5);
+      setMinStock(catMin);
+      if (isMaterial) {
+        const newGroup = getCategoryUnitGroup(newCat);
+        const newUnits = UNIT_GROUP_CONFIG[newGroup].units;
+        setInputUnit(newUnits[0].id);
+      }
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -127,6 +142,7 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
     setErrorMsg(null);
     const catObj = availableCategories.find((c) => c.id === categoryId) || availableCategories[0];
     const categoryName = catObj ? catObj.name : (isMaterial ? 'Tepung & Gandum' : 'Roti Manis');
+    const targetCatMin = getCategoryMinStock(catObj, isMaterial ? 1 : 5);
 
     if (isMaterial) {
       if (!name.trim()) {
@@ -148,7 +164,7 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
           category: categoryName,
           categoryId: catObj?.id || categoryId,
           stock: finalStock,
-          minStock: Number(minStock) || 1,
+          minStock: targetCatMin,
           unit: savedUnit,
           costPerUnit: calculatedCostPerUnit,
         });
@@ -160,7 +176,7 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
             category: categoryName,
             categoryId: catObj?.id || categoryId,
             stock: finalStock,
-            minStock: Number(minStock) || 1,
+            minStock: targetCatMin,
             unit: savedUnit,
             costPerUnit: calculatedCostPerUnit,
           },
@@ -169,9 +185,8 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
         onSuccess?.(res?.message || `Bahan baku ${name.trim()} berhasil ditambahkan.`);
       }
     } else {
-      // ===== PRODUK READY: satuan dikunci "pcs", batas warning otomatis dikunci 5 pcs =====
+      // ===== PRODUK READY: satuan dikunci "pcs", batas kritis otomatis mengikuti kategori =====
       const qty = Number(stock);
-      const min = 5; // Batas warning dikunci di 5 pcs
       if (!catObj) {
         setErrorMsg('Belum ada kategori produk. Buat dulu di menu Kelola Kategori.');
         return;
@@ -201,12 +216,17 @@ export function ItemModal({ isOpen, onClose, mode, itemToEdit, onSuccess }: Item
           category: catObj.name,
           categoryId: catObj.id,
           stock: qty,
-          minStock: 5,
+          minStock: targetCatMin,
           unit: 'pcs',
         });
         onSuccess?.(`Produk ${name.trim()} berhasil diperbarui.`);
       } else {
-        const res = addReadyProductStock({ categoryId: catObj.id, name, stock: qty, minStock: 5 });
+        const res = addReadyProductStock({
+          categoryId: catObj.id,
+          name,
+          stock: qty,
+          minStock: targetCatMin,
+        });
         if (!res.success) {
           setErrorMsg(res.message);
           return;

@@ -5,17 +5,26 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Edit2, Trash2, PackageX, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Category, FinishedProduct } from '@/types';
 import { CategoryIcon } from '@/components/common/CategoryIcon';
+import { getItemMinStock } from '@/lib/utils';
 
 export type ReadyStatusFilter = 'all' | 'available' | 'low' | 'out';
 
-export function getReadyProductStatus(p: FinishedProduct): 'out' | 'low' | 'safe' {
+export function getReadyProductStatus(
+  p: FinishedProduct,
+  categories?: Category[]
+): 'out' | 'low' | 'safe' {
+  const min = getItemMinStock(p, categories, 5);
   if (p.stock <= 0) return 'out';
-  if (p.stock <= p.minStock) return 'low';
+  if (p.stock <= min) return 'low';
   return 'safe';
 }
 
-export function matchesReadyStatus(p: FinishedProduct, filter: ReadyStatusFilter): boolean {
-  const s = getReadyProductStatus(p);
+export function matchesReadyStatus(
+  p: FinishedProduct,
+  filter: ReadyStatusFilter,
+  categories?: Category[]
+): boolean {
+  const s = getReadyProductStatus(p, categories);
   if (filter === 'all') return true;
   if (filter === 'available') return s === 'safe';
   // Yang habis (0) otomatis masuk ke kategori kritis/menipis
@@ -80,9 +89,14 @@ export function ReadyProductList({ products, categories, onEdit, onDelete, onAdd
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-4">
       <AnimatePresence initial={false}>
         {products.map((p) => {
-          const status = getReadyProductStatus(p);
+          const cat = categories.find(
+            (c) =>
+              c.id === p.categoryId ||
+              c.name.toLowerCase().trim() === p.category.toLowerCase().trim()
+          );
+          const effectiveMin = getItemMinStock(p, categories, 5);
+          const status = getReadyProductStatus(p, categories);
           const style = STATUS_STYLE[status];
-          const cat = categories.find((c) => c.id === p.categoryId);
 
           return (
             <motion.div
@@ -135,7 +149,7 @@ export function ReadyProductList({ products, categories, onEdit, onDelete, onAdd
                   <p className={`text-lg sm:text-2xl font-black mt-0.5 ${style.stock}`}>
                     {p.stock} <span className="text-xs font-semibold text-[#8D6E63]">pcs</span>
                   </p>
-                  <span className="text-[9px] text-[#A1887F] font-semibold">Min. {p.minStock} pcs</span>
+                  <span className="text-[9px] text-[#A1887F] font-semibold">Min. {effectiveMin} pcs</span>
                 </div>
               </div>
 

@@ -116,15 +116,40 @@ export function getCategoryUnitGroup(
 }
 
 export function getCategoryMinStock(
-  cat?: { minStock?: number; description?: string } | null
+  cat?: { minStock?: number; description?: string } | null,
+  fallback = 5
 ): number {
-  if (!cat) return 5;
-  if (cat.minStock !== undefined && !isNaN(Number(cat.minStock))) {
+  if (!cat) return fallback;
+  if (cat.minStock !== undefined && cat.minStock !== null && !isNaN(Number(cat.minStock))) {
     return Number(cat.minStock);
   }
   const match = cat.description?.match(/\[min:([0-9.]+)\]/);
   if (match) return Number(match[1]);
-  return 5;
+  return fallback;
+}
+
+export function getItemMinStock(
+  item?: { minStock?: number; categoryId?: string; category?: string } | null,
+  categories?: { id: string; name: string; minStock?: number; description?: string }[],
+  fallback = 5
+): number {
+  if (!item) return fallback;
+  if (categories && categories.length > 0) {
+    const itemCatId = item.categoryId;
+    const itemCatName = item.category?.toLowerCase().trim();
+    const cat = categories.find(
+      (c) =>
+        (itemCatId && c.id === itemCatId) ||
+        (itemCatName && c.name.toLowerCase().trim() === itemCatName)
+    );
+    if (cat) {
+      return getCategoryMinStock(cat, item.minStock !== undefined ? Number(item.minStock) : fallback);
+    }
+  }
+  if (item.minStock !== undefined && item.minStock !== null && !isNaN(Number(item.minStock))) {
+    return Number(item.minStock);
+  }
+  return fallback;
 }
 
 export function cleanCategoryDescription(desc?: string): string {

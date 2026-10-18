@@ -37,7 +37,7 @@ import { CategoryManageModal } from '@/components/kategori/CategoryManageModal';
 import { DeleteDatabaseModal } from '@/components/common/DeleteDatabaseModal';
 import { ConfirmSyncDeleteModal } from '@/components/common/ConfirmSyncDeleteModal';
 import { ToastNotification, ToastData } from '@/components/common/ToastNotification';
-import { getCategoryDisplayUnit } from '@/lib/utils';
+import { getCategoryDisplayUnit, getItemMinStock } from '@/lib/utils';
 import { RawMaterial, FinishedProduct, Category } from '@/types';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 
@@ -119,8 +119,9 @@ export default function StockPage() {
         const matchesSearch =
           !q || m.name.toLowerCase().includes(q) || m.category.toLowerCase().includes(q);
 
-        // Yang habis (<= 0) atau di bawah batas kritis (<= minStock) otomatis masuk kategori kritis
-        const isLow = m.stock <= 0 || m.stock <= m.minStock;
+        // Batas kritis dinamis mengikuti pengaturan kategori (atau fallback ke item)
+        const effectiveMin = getItemMinStock(m, categories, 0);
+        const isLow = m.stock <= 0 || m.stock <= effectiveMin;
         const matchesStatus =
           stockStatusFilter === 'all'
             ? true
@@ -144,9 +145,15 @@ export default function StockPage() {
     );
     return {
       all: inCat.length,
-      // Kritis mencakup yang habis (0) dan yang menipis (<= minStock)
-      low: inCat.filter((m) => m.stock <= 0 || m.stock <= m.minStock).length,
-      safe: inCat.filter((m) => m.stock > 0 && m.stock > m.minStock).length,
+      // Kritis mencakup yang habis (0) dan yang di bawah batas kritis kategori
+      low: inCat.filter((m) => {
+        const min = getItemMinStock(m, categories, 0);
+        return m.stock <= 0 || m.stock <= min;
+      }).length,
+      safe: inCat.filter((m) => {
+        const min = getItemMinStock(m, categories, 0);
+        return m.stock > 0 && m.stock > min;
+      }).length,
     };
   }, [rawMaterials, selectedCategoryId, categories]);
 
@@ -163,11 +170,11 @@ export default function StockPage() {
         const matchesCat = selectedCategoryId === 'all' || p.categoryId === selectedCategoryId;
         const matchesSearch =
           !q || p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q);
-        return matchesCat && matchesSearch && matchesReadyStatus(p, readyStatusFilter);
+        return matchesCat && matchesSearch && matchesReadyStatus(p, readyStatusFilter, categories);
       })
       // Disusun rapi secara alfabetis (A-Z) agar tampilan bersih dan friendly
       .sort((a, b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
-  }, [finishedProducts, selectedCategoryId, searchQuery, readyStatusFilter]);
+  }, [finishedProducts, selectedCategoryId, searchQuery, readyStatusFilter, categories]);
 
   const readyCounts = React.useMemo(() => {
     const inCat = finishedProducts.filter(
@@ -175,11 +182,11 @@ export default function StockPage() {
     );
     return {
       all: inCat.length,
-      available: inCat.filter((p) => matchesReadyStatus(p, 'available')).length,
-      low: inCat.filter((p) => matchesReadyStatus(p, 'low')).length,
-      out: inCat.filter((p) => matchesReadyStatus(p, 'out')).length,
+      available: inCat.filter((p) => matchesReadyStatus(p, 'available', categories)).length,
+      low: inCat.filter((p) => matchesReadyStatus(p, 'low', categories)).length,
+      out: inCat.filter((p) => matchesReadyStatus(p, 'out', categories)).length,
     };
-  }, [finishedProducts, selectedCategoryId]);
+  }, [finishedProducts, selectedCategoryId, categories]);
 
   const handleOpenEditProduct = (p: FinishedProduct) => {
     setItemToEdit(p);

@@ -4,6 +4,7 @@ import React from 'react';
 import { X, Layers, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Category, RawMaterial, FinishedProduct } from '@/types';
 import { CategoryIcon } from '@/components/common/CategoryIcon';
+import { getCategoryMinStock } from '@/lib/utils';
 
 interface CategoryDetailModalProps {
   isOpen: boolean;
@@ -62,8 +63,9 @@ export function CategoryDetailModal({
           ) : (
             <div className="space-y-2.5">
               {items.map((item) => {
+                const effectiveMin = category ? getCategoryMinStock(category, item.minStock) : item.minStock;
                 const isOutOfStock = item.stock <= 0;
-                const isLow = !isOutOfStock && item.stock <= item.minStock;
+                const isLow = !isOutOfStock && item.stock <= effectiveMin;
 
                 return (
                   <div
@@ -99,7 +101,7 @@ export function CategoryDetailModal({
                         )}
                       </div>
                       <p className="text-[10px] text-[#8D6E63] font-medium mt-0.5">
-                        Min. Stok Aman: {item.minStock} {item.unit}
+                        Batas Kritis: ≤ {effectiveMin} {item.unit}
                       </p>
                     </div>
 

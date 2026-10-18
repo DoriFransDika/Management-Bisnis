@@ -10,7 +10,14 @@ import {
   BusinessSummary
 } from '@/types';
 import { supabase, supabaseService } from './supabase';
-import { extractTrxMaterialRef, extractTrxProductRef, buildTrxProductRef, formatRupiah } from './utils';
+import {
+  extractTrxMaterialRef,
+  extractTrxProductRef,
+  buildTrxProductRef,
+  formatRupiah,
+  getCategoryMinStock,
+  getItemMinStock
+} from './utils';
 import {
   INITIAL_CATEGORIES,
   INITIAL_RAW_MATERIALS,
@@ -415,31 +422,45 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateCategory = (id: string, updated: Partial<Category>) => {
+    const targetCat = categories.find((c) => c.id === id);
+    const oldName = targetCat?.name.toLowerCase().trim();
+
     setCategories((prev) =>
-      prev.map((c) => {
-        if (c.id === id) {
-          const newCat = { ...c, ...updated };
-          if (updated.name && updated.name !== c.name) {
-            setRawMaterials((mats) =>
-              mats.map((m) => (m.categoryId === id ? { ...m, category: updated.name! } : m))
-            );
-            setFinishedProducts((prods) =>
-              prods.map((p) => (p.categoryId === id ? { ...p, category: updated.name! } : p))
-            );
-          }
-          if (updated.minStock !== undefined && updated.minStock !== c.minStock) {
-            setRawMaterials((mats) =>
-              mats.map((m) => (m.categoryId === id ? { ...m, minStock: updated.minStock! } : m))
-            );
-            setFinishedProducts((prods) =>
-              prods.map((p) => (p.categoryId === id ? { ...p, minStock: updated.minStock! } : p))
-            );
-          }
-          return newCat;
-        }
-        return c;
-      })
+      prev.map((c) => (c.id === id ? { ...c, ...updated } : c))
     );
+
+    if (updated.name || updated.minStock !== undefined) {
+      const newMin = updated.minStock !== undefined ? Number(updated.minStock) : undefined;
+      setRawMaterials((mats) =>
+        mats.map((m) => {
+          const isMatch =
+            m.categoryId === id ||
+            (oldName && m.category.toLowerCase().trim() === oldName);
+          if (!isMatch) return m;
+          return {
+            ...m,
+            categoryId: id,
+            category: updated.name ?? m.category,
+            minStock: newMin !== undefined ? newMin : m.minStock,
+          };
+        })
+      );
+      setFinishedProducts((prods) =>
+        prods.map((p) => {
+          const isMatch =
+            p.categoryId === id ||
+            (oldName && p.category.toLowerCase().trim() === oldName);
+          if (!isMatch) return p;
+          return {
+            ...p,
+            categoryId: id,
+            category: updated.name ?? p.category,
+            minStock: newMin !== undefined ? newMin : p.minStock,
+          };
+        })
+      );
+    }
+
     supabaseService.updateCategory(id, updated).catch(console.error);
   };
 
@@ -755,7 +776,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       title: `Pengurangan Stok: ${target.name || target.category}`,
       message: `Dipangkas -${amountKg} ${target.unit}. Sisa: ${newStock} ${target.unit}. Alasan: ${reason || 'Dipakai Dapur'}.`,
       time: 'Baru saja',
-      severity: newStock <= target.minStock ? 'warning' : 'info',
+      severity: newStock <= getItemMinStock(target, categories, 0) ? 'warning' : 'info',
     };
     setNotifications((prev) => [newNotif, ...prev]);
     supabaseService.insertNotification(newNotif).catch(console.error);
@@ -873,15 +894,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     supabaseService.updateFinishedProduct(id, { stock: newStockVal }).catch(console.error);
   };
 
-  // Input Stok Produk Ready: satuan dikunci "pcs", batas warning dikunci 5 pcs. Jika nama + kategori sama sudah ada, stok diakumulasikan.
+  // Input Stok Produk Ready: satuan dikunci "pcs", batas kritis otomatis mengikuti kategori. Jika nama + kategori sama sudah ada, stok diakumulasikan.
   const addReadyProductStock = (input: ReadyProductInput): { success: boolean; message: string } => {
     const name = input.name.trim();
     const qty = Math.floor(Number(input.stock));
-    const minStock = 5; // Batas warning dikunci di angka 5 pcs
     const cat = categories.find((c) => c.id === input.categoryId && c.type === 'product');
 
     if (!cat) return { success: false, message: 'Pilih kategori produk terlebih dahulu!' };
     if (!name) return { success: false, message: 'Nama produk wajib diisi!' };
+    const minStock = input.minStock !== undefined && input.minStock > 0 ? input.minStock : getCategoryMinStock(cat, 5);
     if (!Number.isFinite(qty) || qty <= 0) return { success: false, message: 'Jumlah stok harus berupa angka bulat lebih dari 0!' };
 
     const existing =
@@ -967,7 +988,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       quantityLabel = `${qty} ${prod.unit}`;
       successMsg = `Penjualan ${prod.name} ${formatRupiah(amount)} dicatat & stok berkurang ${qty} ${prod.unit} (sisa ${newStock}).`;
 
-      if (newStock <= prod.minStock) {
+      if (newStock <= getItemMinStock(prod, categories, 5)) {
         const warnNotif: ActivityNotification = {
           id: `notif-${Date.now()}-stk`,
           type: 'low_stock',
@@ -1105,8 +1126,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const netProfit = totalIncome - totalExpense;
   const readyProductsCount = finishedProducts.reduce((sum, p) => sum + p.stock, 0);
 
-  const lowStockMaterials = rawMaterials.filter((m) => m.stock <= m.minStock).length;
-  const lowStockProducts = finishedProducts.filter((p) => p.stock <= p.minStock).length;
+  const lowStockMaterials = rawMaterials.filter(
+    (m) => m.stock <= 0 || m.stock <= getItemMinStock(m, categories, 0)
+  ).length;
+  const lowStockProducts = finishedProducts.filter(
+    (p) => p.stock <= 0 || p.stock <= getItemMinStock(p, categories, 5)
+  ).length;
   const lowStockItemsCount = lowStockMaterials + lowStockProducts;
 
   const summary: BusinessSummary = {

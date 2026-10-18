@@ -5,11 +5,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Boxes, Edit2, Trash2, PackageX, AlertTriangle, CheckCircle2, Minus } from 'lucide-react';
 import { Category, RawMaterial } from '@/types';
 import { CategoryIcon } from '@/components/common/CategoryIcon';
-import { formatRupiah } from '@/lib/utils';
+import { formatRupiah, getItemMinStock } from '@/lib/utils';
 
-export function getMaterialStatus(m: RawMaterial): 'out' | 'low' | 'safe' {
+export function getMaterialStatus(m: RawMaterial, categories?: Category[]): 'out' | 'low' | 'safe' {
+  const min = getItemMinStock(m, categories, 0);
   if (m.stock <= 0) return 'out';
-  if (m.stock <= m.minStock) return 'low';
+  if (m.stock <= min) return 'low';
   return 'safe';
 }
 
@@ -77,9 +78,14 @@ export function MaterialList({
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-4">
       <AnimatePresence initial={false}>
         {materials.map((m) => {
-          const status = getMaterialStatus(m);
+          const cat = categories.find(
+            (c) =>
+              c.id === m.categoryId ||
+              c.name.toLowerCase().trim() === m.category.toLowerCase().trim()
+          );
+          const effectiveMin = getItemMinStock(m, categories, 0);
+          const status = getMaterialStatus(m, categories);
           const style = STATUS_STYLE[status];
-          const cat = categories.find((c) => c.id === m.categoryId);
 
           return (
             <motion.div
@@ -133,7 +139,7 @@ export function MaterialList({
                   {m.name}
                 </h4>
 
-                {/* 3. Status Badge & Min Stock */}
+                {/* 3. Status Badge & Batas Kritis Kategori */}
                 <div className="flex items-center gap-1.5 mt-1 text-[10px]">
                   <span
                     className={`px-1.5 py-0.5 rounded-full font-black border text-[9px] sm:text-[10px] ${style.badge}`}
@@ -141,7 +147,7 @@ export function MaterialList({
                     {style.label}
                   </span>
                   <span className="text-[#8D6E63] font-medium text-[9px] sm:text-[10px]">
-                    Min: {m.minStock} {m.unit}
+                    Min: {effectiveMin} {m.unit}
                   </span>
                 </div>
 

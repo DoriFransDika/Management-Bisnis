@@ -9,14 +9,19 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useStore } from '@/lib/store';
+import { getItemMinStock } from '@/lib/utils';
 
 export function NotificationPanel() {
-  const { rawMaterials, finishedProducts, notifications } = useStore();
+  const { rawMaterials, finishedProducts, categories, notifications } = useStore();
 
-  const lowMaterials = rawMaterials.filter((m) => m.stock <= m.minStock);
+  const lowMaterials = rawMaterials.filter(
+    (m) => m.stock <= 0 || m.stock <= getItemMinStock(m, categories, 0)
+  );
   // Pisahkan produk: stok habis (0 pcs) vs hampir habis (>0, ≤ minStock)
   const outOfStockProducts = finishedProducts.filter((p) => p.stock <= 0);
-  const lowStockProducts = finishedProducts.filter((p) => p.stock > 0 && p.stock <= p.minStock);
+  const lowStockProducts = finishedProducts.filter(
+    (p) => p.stock > 0 && p.stock <= getItemMinStock(p, categories, 5)
+  );
   const totalAlerts = lowMaterials.length + outOfStockProducts.length + lowStockProducts.length;
 
   return (
@@ -78,25 +83,28 @@ export function NotificationPanel() {
                 <span className="w-2 h-2 rounded-full bg-amber-500" />
                 Etalase Hampir Habis:
               </p>
-              {lowStockProducts.map((prod) => (
-                <div
-                  key={prod.id}
-                  className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-[#FFF8E1] border border-[#FFE082] flex items-center justify-between text-xs gap-2"
-                >
-                  <div className="min-w-0">
-                    <p className="font-black text-[#3E2723] text-xs truncate">{prod.name}</p>
-                    <p className="text-[10px] sm:text-[11px] text-[#6D4C41]">
-                      Min. {prod.minStock} {prod.unit}
-                    </p>
+              {lowStockProducts.map((prod) => {
+                const min = getItemMinStock(prod, categories, 5);
+                return (
+                  <div
+                    key={prod.id}
+                    className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-[#FFF8E1] border border-[#FFE082] flex items-center justify-between text-xs gap-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-black text-[#3E2723] text-xs truncate">{prod.name}</p>
+                      <p className="text-[10px] sm:text-[11px] text-[#6D4C41]">
+                        Min. {min} {prod.unit}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-xs font-black text-[#E65100]">
+                        {prod.stock} {prod.unit}
+                      </span>
+                      <p className="text-[9px] sm:text-[10px] text-amber-600 font-bold">Menipis</p>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <span className="text-xs font-black text-[#E65100]">
-                      {prod.stock} {prod.unit}
-                    </span>
-                    <p className="text-[9px] sm:text-[10px] text-amber-600 font-bold">Menipis</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -106,28 +114,31 @@ export function NotificationPanel() {
               <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-[#8D6E63]">
                 Bahan Perlu Restock:
               </p>
-              {lowMaterials.map((mat) => (
-                <div
-                  key={mat.id}
-                  className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#FCE4EC]/70 to-[#FFF3E0]/70 border border-[#F8BBD0] flex items-center justify-between text-xs"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-[#D81B60] animate-pulse shrink-0" />
-                    <div className="min-w-0">
-                      <p className="font-black text-[#3E2723] text-xs truncate">{mat.name}</p>
-                      <p className="text-[10px] sm:text-[11px] text-[#6D4C41]">
-                        Min: {mat.minStock} {mat.unit}
-                      </p>
+              {lowMaterials.map((mat) => {
+                const min = getItemMinStock(mat, categories, 0);
+                return (
+                  <div
+                    key={mat.id}
+                    className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#FCE4EC]/70 to-[#FFF3E0]/70 border border-[#F8BBD0] flex items-center justify-between text-xs"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-[#D81B60] animate-pulse shrink-0" />
+                      <div className="min-w-0">
+                        <p className="font-black text-[#3E2723] text-xs truncate">{mat.name}</p>
+                        <p className="text-[10px] sm:text-[11px] text-[#6D4C41]">
+                          Min: {min} {mat.unit}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-xs font-black text-[#D81B60]">
+                        {mat.stock} {mat.unit}
+                      </span>
+                      <p className="text-[9px] sm:text-[10px] text-[#8D6E63] font-bold">Tersisa</p>
                     </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <span className="text-xs font-black text-[#D81B60]">
-                      {mat.stock} {mat.unit}
-                    </span>
-                    <p className="text-[9px] sm:text-[10px] text-[#8D6E63] font-bold">Tersisa</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
